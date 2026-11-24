@@ -1,17 +1,90 @@
-# Java / Maven
+# =============================================================================
+# MiniPay — root .gitignore
+# Module-specific ignores live next to the module (e.g. frontend/ops-console/.gitignore).
+# =============================================================================
+
+# ---- Java / Maven -----------------------------------------------------------
 target/
 *.class
-*.log
+*.jar
+# The wrapper is "only-script": the jar is downloaded on demand, never committed.
 .mvn/wrapper/maven-wrapper.jar
+.mvn/timing.properties
+.flattened-pom.xml
+dependency-reduced-pom.xml
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+hs_err_pid*.log
+replay_pid*.log
 
-# IDE
-.idea/
-*.iml
-.vscode/
-.DS_Store
+# ---- Spring Boot ------------------------------------------------------------
+# Local overrides (credentials, ports) — never commit; use application-*.yml in src/ for shared config.
+application-local.yml
+application-local.yaml
+application-local.properties
+spring-shell.log
 
-# Node
+# ---- Node / frontend --------------------------------------------------------
 node_modules/
 dist/
+dist-ssr/
 *.local
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+
+# ---- Secrets & environment --------------------------------------------------
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+credentials.json
+
+# ---- Logs & local runtime data ---------------------------------------------
+*.log
+logs/
+*.pid
+# Local Docker volume bind-mounts, if anyone switches compose to bind mounts.
+.data/
+docker-data/
+
+# ---- IDEs & editors ---------------------------------------------------------
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.classpath
+.project
+.settings/
+.factorypath
+bin/
+*.swp
+*.swo
+*~
+.history/
+
+# ---- OS ---------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Claude Code (personal settings only; shared .claude/ config may be committed)
+.claude/settings.local.json

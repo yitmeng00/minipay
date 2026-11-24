@@ -64,6 +64,10 @@ class PaymentApiIT extends PaymentHubIntegrationTest {
 
         mvc.perform(get("/api/payments").param("status", "SENT").param("q", uetr))
                 .andExpect(jsonPath("$.total").value(1));
+
+        // Ledger entries carry the internal payment id; it resolves to the same payment.
+        String id = JsonPath.read(created, "$.id");
+        mvc.perform(get("/api/payments/" + id)).andExpect(jsonPath("$.payment.uetr").value(uetr));
     }
 
     @Test

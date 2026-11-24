@@ -14,7 +14,8 @@ public interface PaymentHubApi {
      */
     Replayable<PaymentView> create(CreatePaymentCommand command);
 
-    PaymentDetailView get(String uetr);
+    /** @param ref the UETR, or the hub's internal payment id (as stored on ledger entries) */
+    PaymentDetailView get(String ref);
 
     PageView<PaymentView> search(PaymentQuery query);
 

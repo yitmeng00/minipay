@@ -249,12 +249,17 @@ public class PaymentService implements PaymentHubApi {
 
     // =================================================================== helpers
 
-    private Payment find(String uetr) {
-        if (!Uetr.isValid(uetr == null ? null : uetr.toLowerCase(Locale.ROOT))) {
-            throw new PaymentException(PaymentError.PAYMENT_NOT_FOUND, "Not a valid UETR: " + uetr);
+    /**
+     * Finds a payment by UETR — or by the hub's internal payment id, which is what the ledger stores
+     * on journal entries (so a statement line can link to its payment).
+     */
+    private Payment find(String ref) {
+        if (!Uetr.isValid(ref == null ? null : ref.toLowerCase(Locale.ROOT))) {
+            throw new PaymentException(PaymentError.PAYMENT_NOT_FOUND, "Not a valid UETR: " + ref);
         }
-        return payments.findByUetr(UUID.fromString(uetr)).orElseThrow(() ->
-                new PaymentException(PaymentError.PAYMENT_NOT_FOUND, "No payment with UETR " + uetr));
+        UUID id = UUID.fromString(ref);
+        return payments.findByUetr(id).or(() -> payments.findById(id)).orElseThrow(() ->
+                new PaymentException(PaymentError.PAYMENT_NOT_FOUND, "No payment with UETR " + ref));
     }
 
     private Optional<Replayable<PaymentView>> replay(String key, String hash) {

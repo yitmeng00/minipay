@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MiniPay · Reconciliation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.mp{--bg:#F5F6F8;--surface:#FFFFFF;--surface2:#F8F9FB;--border:#E1E4E9;--border2:#ECEEF1;--fg:#111827;--muted:#566070;--accent:#3550D0;--accent-bg:#ECEFFC;--ok-bg:#E3F3E8;--ok-fg:#13662C;--ok:#1E8E44;--info-bg:#E6EEFD;--info-fg:#1A52BD;--info:#2F6FE4;--warn-bg:#FDF1D8;--warn-fg:#7F4A00;--warn:#D98E04;--err-bg:#FCE6E6;--err-fg:#AE2116;--err:#D93A2E;--track:#EEF0F3;font-family:Inter,system-ui,sans-serif;color:var(--fg);background:var(--bg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.mp.dark{--bg:#0B0E13;--surface:#12161D;--surface2:#171C24;--border:#262D38;--border2:#1D232C;--fg:#E7EAEE;--muted:#A1AAB7;--accent:#93A6FF;--accent-bg:#1C2440;--ok-bg:#0F2A19;--ok-fg:#74D893;--ok:#3FB866;--info-bg:#10213F;--info-fg:#86B4FF;--info:#4A8BF0;--warn-bg:#2E2208;--warn-fg:#F3C557;--warn:#E3A21A;--err-bg:#35141A;--err-fg:#FF9191;--err:#EF5A4E;--track:#1F2630}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.02em;white-space:nowrap;line-height:18px}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.t-ok{background:var(--ok-bg);color:var(--ok-fg)}.t-info{background:var(--info-bg);color:var(--info-fg)}.t-warn{background:var(--warn-bg);color:var(--warn-fg)}.t-err{background:var(--err-bg);color:var(--err-fg)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2)}
+.card-t{margin:0;font-size:13px;font-weight:600}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 16px;border-bottom:1px solid var(--border2);white-space:nowrap}
+.tbl td{padding:10px 16px;border-bottom:1px solid var(--border2);white-space:nowrap;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:var(--muted);text-decoration:none;font-weight:500}
+.nav a:hover{background:var(--surface2);color:var(--fg)}
+.nav a.on{background:var(--accent-bg);color:var(--accent)}
+.navsec{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:14px 10px 6px}
+.badge{margin-left:auto;font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;line-height:18px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.mp.dark .btn.primary{color:#0B0E13}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:500;height:30px;padding:0 12px;cursor:pointer}
+.seg button.on{background:var(--accent-bg);color:var(--accent)}
+.input{height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:0 10px;box-sizing:border-box}
+.lbl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.menu{position:absolute;top:38px;left:0;z-index:5;width:280px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px}
+.menu button{display:flex;width:100%;align-items:center;gap:10px;border:0;background:transparent;color:var(--fg);font:inherit;text-align:left;padding:8px 10px;border-radius:6px;cursor:pointer}
+.menu button:hover{background:var(--surface2)}
+a{color:var(--accent)}a:hover{color:var(--fg)}
+.bar{flex:1 1 0;border-radius:3px 3px 0 0;background:var(--accent);min-width:0}
+.bar.partial{opacity:.45}
+.bar.future{background:transparent}
+.tab{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:500;padding:8px 12px;margin-bottom:-1px;border-bottom:2px solid transparent;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.tab:hover{color:var(--fg)}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tabcount{font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted)}
+.tbl.dense th{padding:8px 10px;background:var(--surface2)}
+.tbl.dense td{padding:7px 10px}
+.tbl.dense tr:hover td{background:var(--surface2)}
+.tbl.dense tr.selrow td{background:var(--accent-bg)}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dir{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:12px;font-weight:700}
+.dir.out{background:var(--info-bg);color:var(--info-fg)}
+.dir.in{background:var(--ok-bg);color:var(--ok-fg)}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0;cursor:pointer}
+.mp{--x-tag:#1A52BD;--x-attr:#8A4B00;--x-str:#13662C;--x-p:#646D7A;--code-bg:#F8F9FB}
+.mp.dark{--x-tag:#86B4FF;--x-attr:#F3C557;--x-str:#74D893;--x-p:#8A94A3;--code-bg:#0E1218}
+.node{position:relative;z-index:1;width:24px;height:24px;box-sizing:border-box;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.node.ok{background:var(--ok);color:var(--surface)}
+.node.skip{background:var(--surface);border:2px dashed var(--muted)}
+.node.err{background:var(--err);color:#fff}
+.line{position:absolute;top:11px;left:50%;width:100%;height:0;border-top:2px solid var(--ok)}
+.line.dashed{border-top:2px dashed var(--muted)}
+.msg{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--fg);font:inherit;padding:9px 10px;border-radius:6px;cursor:pointer}
+.msg:hover{background:var(--surface2)}
+.msg.on{background:var(--accent-bg);border-color:var(--border)}
+.code{background:var(--code-bg);font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;line-height:20px}
+.cl{display:flex;white-space:pre}
+.ln{flex:0 0 44px;text-align:right;padding-right:14px;color:var(--x-p);user-select:none;opacity:.8}
+.x-tag{color:var(--x-tag)}.x-attr{color:var(--x-attr)}.x-str{color:var(--x-str)}.x-p,.x-cmt{color:var(--x-p)}.x-text{color:var(--fg)}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label,.flabel{font-size:12px;font-weight:600;color:var(--fg)}
+.hint{font-size:11px;color:var(--muted)}
+.input:focus,.ta:focus,.sel:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.input.bad{border-color:var(--err)}.input.good{border-color:var(--ok)}
+.ta{border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:8px 10px;resize:vertical;box-sizing:border-box;width:100%}
+.sel{height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:0 8px;box-sizing:border-box}
+.seg2{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg2 button{flex:1;border:0;border-right:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;padding:7px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px}
+.seg2 button:last-child{border-right:0}
+.seg2 button.on{background:var(--accent-bg);color:var(--accent)}
+.ac{position:absolute;top:100%;left:0;right:0;margin-top:4px;z-index:6;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:4px;max-height:260px;overflow:auto}
+.ac button{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;border:0;background:transparent;color:var(--fg);font:inherit;text-align:left;padding:7px 8px;border-radius:6px;cursor:pointer}
+.ac button:hover{background:var(--surface2)}
+.seggrid{display:flex;flex-wrap:wrap;gap:4px}
+.sg{display:flex;flex-direction:column;align-items:center;gap:4px}
+.sg .v{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:15px;font-weight:500;padding:6px 8px;border-radius:5px;letter-spacing:.06em}
+.sg .k{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.s-cc{background:var(--info-bg);color:var(--info-fg)}.s-ck{background:var(--warn-bg);color:var(--warn-fg)}.s-bk{background:var(--ok-bg);color:var(--ok-fg)}.s-br{background:var(--accent-bg);color:var(--accent)}.s-ac{background:var(--surface2);color:var(--fg);border:1px solid var(--border)}.s-nk{background:var(--err-bg);color:var(--err-fg)}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.chk .i{flex:0 0 16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-top:1px}
+.chk .i.ok{background:var(--ok);color:var(--surface)}.chk .i.err{background:var(--err);color:#fff}.chk .i.warn{background:var(--warn);color:#111}
+.qitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--border2);background:transparent;color:var(--fg);font:inherit;padding:11px 14px;cursor:pointer}
+.qitem:hover{background:var(--surface2)}
+.qitem.on{background:var(--accent-bg);box-shadow:inset 3px 0 0 var(--accent)}
+.score{display:inline-flex;align-items:center;gap:6px}
+.score .trk{width:54px;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+mark{background:var(--warn-bg);color:var(--warn-fg);border-radius:3px;padding:0 2px;font-weight:600}
+</style>
+</helmet>
+<div class="mp {{themeClass}}" style="display: flex; flex-wrap: wrap; min-height: 100vh">
+
+<aside style="flex: 1 1 232px; max-width: 100%; box-sizing: border-box; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 10px 12px">
+<div style="width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: flex; align-items: center; justify-content: center">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l5-10 3 6 3-6 5 10"/></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 14px; letter-spacing: -0.01em">MiniPay</span>
+<span style="font-size: 11px; color: var(--muted)">Operations console</span>
+</div>
+</div>
+<nav class="nav" aria-label="Main">
+<div class="navsec">Monitor</div>
+<a href="Main.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview</a>
+<a href="Payments.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16l-4-4M20 17H4l4 4"/></svg>Payments</a>
+<a href="Sanctions.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/></svg>Sanctions queue<span class="badge t-warn">7</span></a>
+<a href="Settlement.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Settlement</a>
+<a href="Reconciliation.dc.html" class="on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12l3 3 5-6"/></svg>Reconciliation<span class="badge t-err">4</span></a>
+<div class="navsec">Operate</div>
+<a href="CreatePayment.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Create payment</a>
+<a href="Accounts.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18"/></svg>Accounts &amp; ledger</a>
+<a href="ReferenceData.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3z"/><path d="M4 17a3 3 0 013-3h11"/></svg>Reference data</a>
+</nav>
+<div style="margin-top: auto; padding: 12px 10px 4px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border2)">
+<span class="chip t-warn" style="align-self: flex-start">SIMULATION</span>
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 28px; height: 28px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700">NR</div>
+<div style="display: flex; flex-direction: column; line-height: 1.3">
+<span style="font-weight: 600">Nadia Rahman</span>
+<span style="font-size: 11px; color: var(--muted)">Payment Ops · L2</span>
+</div>
+</div>
+</div>
+</aside>
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--border)">
+<div style="position: relative">
+<button class="btn" onClick="{{toggleBankMenu}}" aria-haspopup="true" aria-label="Switch bank">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--ok)"></span>
+<span style="font-weight: 600">{{bank.name}}</span>
+<span class="mono" style="color: var(--muted)">{{bank.bic}}</span>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+</button>
+<sc-if value="{{bankMenuOpen}}" hint-placeholder-val="{{ false }}">
+<div class="menu">
+<sc-for list="{{banks}}" as="b" hint-placeholder-count="3">
+<button onClick="{{b.pick}}">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--ok)"></span>
+<span style="display: flex; flex-direction: column; line-height: 1.3"><span style="font-weight: 600">{{b.name}} · {{b.city}}</span><span class="mono" style="color: var(--muted)">{{b.bic}} · {{b.role}}</span></span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+<label style="flex: 1 1 320px; position: relative; display: flex; align-items: center">
+<svg style="position: absolute; left: 10px; color: var(--muted)" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+<input class="input" type="search" placeholder="Search by UETR, BIC, IBAN or end-to-end ID" aria-label="Global search" style="width: 100%; padding-left: 32px; padding-right: 40px; background: var(--surface2)">
+<span class="mono" style="position: absolute; right: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px">/</span>
+</label>
+<div style="display: flex; align-items: center; gap: 14px; margin-left: auto">
+<span style="font-size: 12px; color: var(--muted)"><span class="mono" style="color: var(--fg)">14:02:17</span> MYT · Business date 24 Nov 2026</span>
+<button class="btn" onClick="{{toggleTheme}}" aria-label="Toggle light or dark mode" style="width: 32px; padding: 0; justify-content: center">
+<sc-if value="{{isDark}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></sc-if>
+<sc-if value="{{isLight}}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg></sc-if>
+</button>
+<button class="btn" aria-label="Notifications, 6 unread" style="width: 32px; padding: 0; justify-content: center; position: relative">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"/></svg>
+<span style="position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--err)"></span>
+</button>
+</div>
+</header>
+
+<main style="padding: 24px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Reconciliation</h1>
+<p style="margin: 2px 0 0; color: var(--muted)">Internal ledger vs the correspondent’s camt.053 end-of-day statement</p>
+</div>
+<div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap">
+<div class="field"><label for="rc-acct" class="hint">Account</label><select id="rc-acct" class="sel" style="width: 300px"><option>1101-EUR-MNPB · Nostro EUR @ Bank B</option><option>1102-GBP-MNPC · Nostro GBP @ Bank C</option><option>1103-USD-MNPU · Nostro USD @ MiniPay US</option></select></div>
+<div class="field"><label for="rc-date" class="hint">Statement date</label><input id="rc-date" class="input mono" value="2026-11-23" style="width: 120px"></div>
+<button class="btn">Re-run matching</button>
+</div>
+</div>
+
+<section class="card" style="padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center; font-size: 12px">
+<span><span class="lbl">Statement</span> <span class="mono" style="margin-left: 6px">STMT-MNPB-20261123-0441</span></span>
+<span><span class="lbl">From</span> <span class="mono" style="margin-left: 6px">MNPBDEFFXXX</span></span>
+<span><span class="lbl">Received</span> <span class="mono" style="margin-left: 6px">24 Nov 08:00:12 MYT</span></span>
+<span><span class="lbl">Message</span> <span class="mono" style="margin-left: 6px">camt.053.001.08</span></span>
+<span><span class="lbl">Matching rules</span> <span style="margin-left: 6px">UETR exact → E2E + amount → ref + amount ± 0 → manual</span></span>
+</section>
+
+<section aria-label="Reconciliation figures" style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<div class="card" style="padding: 12px 16px"><span class="lbl">Ledger entries</span><div class="mono" style="font-size: 20px; font-weight: 600">412</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Statement entries</span><div class="mono" style="font-size: 20px; font-weight: 600">413</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Matched</span><div class="mono" style="font-size: 20px; font-weight: 600">{{matchedN}}</div><span class="hint">{{matchedNote}}</span></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Match rate</span><div class="mono" style="font-size: 20px; font-weight: 600">{{rate}}</div></div>
+<div class="card" style="padding: 12px 16px; border-color: {{openBorder}}"><span class="lbl">Open breaks</span><div class="mono" style="font-size: 20px; font-weight: 600; color: {{openColor}}">{{openN}}</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Unmatched value</span><div class="mono" style="font-size: 20px; font-weight: 600">{{openValue}}</div><span class="hint">EUR, absolute</span></div>
+</section>
+
+<section class="card" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr))">
+<div style="padding: 12px 16px; border-right: 1px solid var(--border2)"><span class="lbl">Ledger closing · 23 Nov</span><div class="mono" style="font-size: 16px; font-weight: 500; margin-top: 2px">3,331,775.00</div></div>
+<div style="padding: 12px 16px; border-right: 1px solid var(--border2)"><span class="lbl">Statement ClsgBooked</span><div class="mono" style="font-size: 16px; font-weight: 500; margin-top: 2px">3,387,595.00</div></div>
+<div style="padding: 12px 16px; border-right: 1px solid var(--border2)"><span class="lbl">Difference</span><div class="mono" style="font-size: 16px; font-weight: 500; margin-top: 2px">+55,820.00</div></div>
+<div style="padding: 12px 16px"><span class="lbl">Explained</span><div style="display: flex; align-items: center; gap: 8px; margin-top: 2px"><span class="mono" style="font-size: 16px; font-weight: 500">{{explained}}</span><span class="chip {{proofTone}}">{{proofLabel}}</span></div><span class="hint">{{proofNote}}</span></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<section class="card" style="flex: 999 1 760px; min-width: 0; overflow: hidden">
+<div class="card-h">
+<div><h2 class="card-t">Matching · ledger ↔ statement</h2><span style="font-size: 12px; color: var(--muted)">{{shownNote}} · select a row to inspect the camt.053 entry</span></div>
+<div class="seg" role="group" aria-label="Filter"><sc-for list="{{filters}}" as="o" hint-placeholder-count="3"><button class="{{o.cls}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+</div>
+<div style="overflow-x: auto">
+<table class="tbl dense">
+<thead>
+<tr><th colspan="4" style="background: var(--surface2); border-right: 1px solid var(--border)">Internal ledger · 1101-EUR-MNPB</th><th style="text-align: center; border-right: 1px solid var(--border)">Match</th><th colspan="4" style="background: var(--surface2)">camt.053 · MNPBDEFFXXX</th></tr>
+<tr><th>Journal</th><th>Booked</th><th>Reference</th><th style="text-align: right; border-right: 1px solid var(--border)">Amount</th><th style="text-align: center; border-right: 1px solid var(--border)">Rule</th><th>NtryRef</th><th>Booked</th><th>Reference</th><th style="text-align: right">Amount</th></tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<tr class="{{r.rowCls}}" style="cursor: pointer; background: {{r.bg}}" onClick="{{r.pick}}">
+<td class="mono">{{r.lj}}</td>
+<td class="mono" style="color: var(--muted)">{{r.lt}}</td>
+<td class="mono">{{r.lref}}</td>
+<td class="num mono" style="border-right: 1px solid var(--border2)">{{r.lamt}} <span style="color: var(--muted); font-size: 11px">{{r.ldc}}</span></td>
+<td style="text-align: center; border-right: 1px solid var(--border2)"><span class="chip {{r.tone}}" style="font-size: 10px">{{r.rule}}</span></td>
+<td class="mono">{{r.sref}}</td>
+<td class="mono" style="color: var(--muted)">{{r.st}}</td>
+<td class="mono">{{r.sref2}}</td>
+<td class="num mono">{{r.samt}} <span style="color: var(--muted); font-size: 11px">{{r.sdc}}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+<div style="padding: 8px 16px; border-top: 1px solid var(--border2); font-size: 11px; color: var(--muted)">Ledger Dr/Cr is from Bank A’s view (nostro is an asset); statement CRDT/DBIT is from Bank B’s view of our account — a ledger Cr matches a statement DBIT.</div>
+</section>
+
+<section class="card" style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column">
+<div class="card-h"><div><h2 class="card-t">camt.053 entry</h2><span style="font-size: 12px; color: var(--muted)">{{selTitle}}</span></div><span class="chip {{selTone}}">{{selRule}}</span></div>
+<sc-if value="{{selHasXml}}" hint-placeholder-val="{{ true }}">
+<div class="code" style="padding: 10px 0; overflow: auto; max-height: 460px">
+<sc-for list="{{xmlLines}}" as="ln" hint-placeholder-count="20">
+<div class="cl"><span class="ln">{{ln.n}}</span><span class="lc"><sc-for list="{{ln.toks}}" as="tk" hint-placeholder-count="4"><span class="{{tk.c}}">{{tk.t}}</span></sc-for></span></div>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{selNoXml}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 24px 16px; color: var(--muted); font-size: 12px">No statement entry exists for this ledger journal. The correspondent has not booked it yet, so nothing appears in camt.053 for 23 Nov.</div>
+</sc-if>
+<div style="padding: 10px 16px; border-top: 1px solid var(--border2); font-size: 12px">{{selExplain}}</div>
+</section>
+</div>
+
+<section class="card" style="overflow: hidden">
+<div class="card-h"><div><h2 class="card-t">Breaks</h2><span style="font-size: 12px; color: var(--muted)">{{openN}} open · every resolution is posted to the audit log</span></div></div>
+<div style="overflow-x: auto">
+<table class="tbl dense">
+<thead><tr><th>Break</th><th>Reason</th><th>Reference</th><th style="text-align: right">Ledger</th><th style="text-align: right">Statement</th><th style="text-align: right">Difference</th><th>Age</th><th>Suggested resolution</th><th>Action</th></tr></thead>
+<tbody>
+<sc-for list="{{breaks}}" as="b" hint-placeholder-count="4">
+<tr>
+<td class="mono" style="font-weight: 500">{{b.id}}</td>
+<td><span class="chip {{b.tone}}">{{b.type}}</span></td>
+<td class="mono">{{b.ref}}</td>
+<td class="num mono">{{b.led}}</td>
+<td class="num mono">{{b.stm}}</td>
+<td class="num mono" style="font-weight: 500">{{b.diff}}</td>
+<td class="mono" style="color: var(--muted)">{{b.age}}</td>
+<td style="white-space: normal; font-size: 12px; min-width: 260px">{{b.hint}}</td>
+<td>
+<sc-if value="{{b.open}}" hint-placeholder-val="{{ true }}"><div style="display: flex; gap: 6px"><button class="btn primary" style="height: 28px" onClick="{{b.resolve}}">{{b.action}}</button><button class="btn" style="height: 28px" onClick="{{b.focus}}">Inspect</button></div></sc-if>
+<sc-if value="{{b.done}}" hint-placeholder-val="{{ false }}"><div style="display: flex; gap: 6px; align-items: center"><span class="chip t-ok">Resolved · {{b.action}}</span><button class="btn" style="height: 26px; font-size: 12px" onClick="{{b.undo}}">Undo</button></div></sc-if>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</section>
+
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1500}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, bankIdx: 0, bankMenuOpen: false, filter: 'all', sel: 5, resolved: {} };
+  }
+  fmt(n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  tokLine(line) {
+    const re = /(<\?[^?]*\?>)|(<\/?)([\w:.]+)|(\s[\w:]+)(=)("[^"]*")|(\/?>)|([^<]+)/g;
+    const m0 = line.match(/^\s*/)[0];
+    const toks = [];
+    if (m0) toks.push({ c: 'x-ws', t: m0 });
+    const rest = line.slice(m0.length);
+    let m;
+    while ((m = re.exec(rest)) !== null) {
+      if (m[1]) toks.push({ c: 'x-cmt', t: m[1] });
+      else if (m[2]) { toks.push({ c: 'x-p', t: m[2] }); toks.push({ c: 'x-tag', t: m[3] }); }
+      else if (m[4]) { toks.push({ c: 'x-attr', t: m[4] }); toks.push({ c: 'x-p', t: m[5] }); toks.push({ c: 'x-str', t: m[6] }); }
+      else if (m[7]) toks.push({ c: 'x-p', t: m[7] });
+      else if (m[8]) toks.push({ c: 'x-text', t: m[8] });
+    }
+    return { toks };
+  }
+  ntry(s) {
+    const L = [
+      '<Ntry>',
+      '  <NtryRef>' + s.ref + '</NtryRef>',
+      '  <Amt Ccy="EUR">' + s.amt.toFixed(2) + '</Amt>',
+      '  <CdtDbtInd>' + s.dc + '</CdtDbtInd>',
+      '  <Sts><Cd>BOOK</Cd></Sts>',
+      '  <BookgDt><Dt>2026-11-23</Dt></BookgDt>',
+      '  <ValDt><Dt>2026-11-23</Dt></ValDt>',
+      '  <AcctSvcrRef>' + s.svcr + '</AcctSvcrRef>',
+      '  <BkTxCd><Domn><Cd>' + s.bk[0] + '</Cd><Fmly><Cd>' + s.bk[1] + '</Cd><SubFmlyCd>' + s.bk[2] + '</SubFmlyCd></Fmly></Domn></BkTxCd>'
+    ];
+    if (s.e2e) {
+      L.push('  <NtryDtls>', '    <TxDtls>', '      <Refs>', '        <EndToEndId>' + s.e2e + '</EndToEndId>');
+      if (s.uetr) L.push('        <UETR>' + s.uetr + '</UETR>');
+      L.push('      </Refs>');
+      if (s.instd) L.push('      <AmtDtls><InstdAmt><Amt Ccy="EUR">' + s.instd.toFixed(2) + '</Amt></InstdAmt></AmtDtls>');
+      if (s.chg) L.push('      <Chrgs><Rcrd><Amt Ccy="EUR">' + s.chg.toFixed(2) + '</Amt><Agt><FinInstnId><BICFI>MNPBDEFFXXX</BICFI></FinInstnId></Agt></Rcrd></Chrgs>');
+      L.push('    </TxDtls>', '  </NtryDtls>');
+    } else if (s.info) {
+      L.push('  <AddtlNtryInf>' + s.info + '</AddtlNtryInf>');
+    }
+    L.push('</Ntry>');
+    return L.map((l, i) => ({ ...this.tokLine(l), n: i + 1 }));
+  }
+  renderVals() {
+    const st = this.state;
+    const theme = st.theme || this.props.theme || 'light';
+    const banks = [
+      { name: 'Bank A', city: 'Kuala Lumpur', bic: 'MNPAMYKLXXX', role: 'Originating bank' },
+      { name: 'Bank B', city: 'Frankfurt', bic: 'MNPBDEFFXXX', role: 'Correspondent' },
+      { name: 'Bank C', city: 'London', bic: 'MNPCGB2LXXX', role: 'Beneficiary bank' }
+    ];
+    const OUT = ['PMNT', 'ICDT', 'XBCT'], IN = ['PMNT', 'RCDT', 'XBCT'];
+    const R = [
+      { l: { j: 'JRN-1123-04410', t: '09:02', ref: 'E2E-SPC-77201', dc: 'Cr', amt: 48000 }, s: { ref: 'MNPB-ST-1123-0102', t: '09:02', dc: 'DBIT', amt: 48000, svcr: 'MNPB-REF-77201', bk: OUT, e2e: 'E2E-SPC-77201', uetr: '6b1e93d0-4a27-4c58-9e10-d3f82a7c5b61' }, rule: 'UETR', kind: 'm' },
+      { l: { j: 'JRN-1123-04522', t: '10:15', ref: 'INV-2026-29871', dc: 'Dr', amt: 12000 }, s: { ref: 'MNPB-ST-1123-0157', t: '10:15', dc: 'CRDT', amt: 12000, svcr: 'MNPB-REF-29871', bk: IN, e2e: 'INV-2026-29871', uetr: 'a03c7e58-91d2-4f6b-b847-2e9d05c1f3a8' }, rule: 'UETR', kind: 'm' },
+      { l: { j: 'JRN-1123-04610', t: '11:40', ref: 'E2E-KTE-77012', dc: 'Cr', amt: 230500 }, s: { ref: 'MNPB-ST-1123-0201', t: '11:40', dc: 'DBIT', amt: 230500, svcr: 'MNPB-REF-77012', bk: OUT, e2e: 'E2E-KTE-77012', uetr: 'd7f2b046-3c81-4e9a-a5d3-80b6e1f47c29' }, rule: 'UETR', kind: 'm' },
+      { l: { j: 'JRN-1123-04788', t: '13:05', ref: 'FX-SWP-551877', dc: 'Dr', amt: 750000 }, s: { ref: 'MNPB-ST-1123-0266', t: '13:05', dc: 'CRDT', amt: 750000, svcr: 'TRS-551877', bk: ['PMNT', 'RCDT', 'BOOK'], info: 'FX SWAP SETTLEMENT REF FX-SWP-551877' }, rule: 'Ref + amt', kind: 'm' },
+      { l: { j: 'JRN-1123-05011', t: '15:22', ref: 'E2E-PST-10399', dc: 'Cr', amt: 19640 }, s: { ref: 'MNPB-ST-1123-0318', t: '15:24', dc: 'DBIT', amt: 19640, svcr: 'MNPB-REF-10399X', bk: OUT, e2e: 'NOTPROVIDED' }, rule: 'Manual', kind: 'm', note: 'Matched manually by n.rahman — Bank B dropped the end-to-end ID.' },
+      { l: { j: 'JRN-1123-05230', t: '16:48', ref: 'INV-FR-88213', dc: 'Dr', amt: 12500 }, s: { ref: 'MNPB-ST-1123-0388', t: '16:48', dc: 'CRDT', amt: 12485, svcr: 'MNPB-REF-88213', bk: IN, e2e: 'INV-FR-88213', uetr: '4c9a1f37-b5e0-4d26-8f73-1a6d29e0c8b4', instd: 12500, chg: 15 }, rule: 'Δ amount', kind: 'b', brk: 'BRK-0443', note: 'Instructed EUR 12,500.00 but Bank B deducted EUR 15.00 in Chrgs — the ledger booked the gross amount.' },
+      { l: { j: 'JRN-1123-05544', t: '18:10', ref: 'E2E-KTE-77099', dc: 'Cr', amt: 4140 }, s: { ref: 'MNPB-ST-1123-0412', t: '18:10', dc: 'DBIT', amt: 4140, svcr: 'MNPB-REF-77099', bk: OUT, e2e: 'E2E-KTE-77099', uetr: '8e5d20b1-7f4c-4a93-b6e8-c31f9d7a0254' }, rule: 'UETR', kind: 'm' },
+      { l: null, s: { ref: 'MNPB-ST-1123-0413', t: '18:10', dc: 'DBIT', amt: 4140, svcr: 'MNPB-REF-77099', bk: OUT, e2e: 'E2E-KTE-77099', uetr: '8e5d20b1-7f4c-4a93-b6e8-c31f9d7a0254' }, rule: 'Duplicate', kind: 'b', brk: 'BRK-0444', note: 'Same UETR and AcctSvcrRef as NtryRef 0412 — Bank B booked the debit twice.' },
+      { l: { j: 'JRN-1123-06102', t: '23:58', ref: 'E2E-SPC-77255', dc: 'Cr', amt: 60000 }, s: null, rule: 'Missing', kind: 'b', brk: 'BRK-0442', note: 'Sent at 23:58 MYT (16:58 CET) after Bank B’s booking cut — expect it on the 24 Nov statement.' },
+      { l: null, s: { ref: 'MNPB-ST-1123-0419', t: '23:59', dc: 'DBIT', amt: 25, svcr: 'CHG-NOV-0441', bk: ['ACMT', 'MDOP', 'CHRG'], info: 'ACCOUNT MAINTENANCE FEE NOV 2026' }, rule: 'Missing', kind: 'b', brk: 'BRK-0441', note: 'Monthly account maintenance charge from Bank B — not yet posted in our ledger.' }
+    ];
+    const BRK = [
+      { id: 'BRK-0441', type: 'Missing in ledger', tone: 't-warn', ref: 'CHG-NOV-0441', led: '—', stm: 'DBIT 25.00', diff: -25, age: '6h 02m', hint: 'Bank charge on the statement only. Post to 6110-BANK-CHG against the nostro.', action: 'Post charge', row: 9 },
+      { id: 'BRK-0442', type: 'Missing in statement', tone: 't-info', ref: 'E2E-SPC-77255', led: 'Cr 60,000.00', stm: '—', diff: 60000, age: '6h 02m', hint: 'Timing difference — booked after the correspondent’s cut. Carry forward to the 24 Nov statement.', action: 'Carry forward', row: 8 },
+      { id: 'BRK-0443', type: 'Amount mismatch', tone: 't-err', ref: 'INV-FR-88213', led: 'Dr 12,500.00', stm: 'CRDT 12,485.00', diff: -15, age: '6h 02m', hint: 'Intermediary fee deducted under SHAR. Post the EUR 15.00 difference to charges.', action: 'Post difference', row: 5 },
+      { id: 'BRK-0444', type: 'Duplicate', tone: 't-err', ref: 'E2E-KTE-77099', led: 'Cr 4,140.00', stm: 'DBIT 4,140.00 ×2', diff: -4140, age: '6h 02m', hint: 'Correspondent booked the debit twice. Raise a claim with MNPBDEFFXXX for reversal.', action: 'Raise claim', row: 7 }
+    ];
+    const isOpen = (id) => !st.resolved[id];
+    const openBrk = BRK.filter(b => isOpen(b.id));
+    const rows = R.map((r, i) => ({ r, i })).filter(o => st.filter === 'all' || (st.filter === 'm' ? o.r.kind === 'm' : o.r.kind === 'b'))
+      .map(({ r, i }) => {
+        const resolved = r.brk && !isOpen(r.brk);
+        return {
+          lj: r.l ? r.l.j : '—', lt: r.l ? r.l.t : '', lref: r.l ? r.l.ref : '', lamt: r.l ? this.fmt(r.l.amt) : '', ldc: r.l ? r.l.dc : '',
+          sref: r.s ? r.s.ref.replace('MNPB-ST-1123-', '…') : '—', st: r.s ? r.s.t : '', sref2: r.s ? (r.s.e2e || r.s.svcr) : '', samt: r.s ? this.fmt(r.s.amt) : '', sdc: r.s ? r.s.dc : '',
+          rule: resolved ? 'Resolved' : r.rule,
+          tone: resolved ? 't-ok' : r.kind === 'm' ? (r.rule === 'Manual' ? 't-info' : 't-ok') : r.rule === 'Missing' ? 't-warn' : 't-err',
+          bg: st.sel === i ? 'var(--accent-bg)' : (r.kind === 'b' && !resolved ? 'color-mix(in srgb, var(--err-bg) 55%, transparent)' : 'transparent'),
+          rowCls: '', pick: () => this.setState({ sel: i })
+        };
+      });
+    const sr = R[st.sel];
+    const diffSum = openBrk.reduce((a, b) => a + b.diff, 0);
+    const resolvedSum = BRK.filter(b => !isOpen(b.id)).reduce((a, b) => a + b.diff, 0);
+    const absOpen = openBrk.reduce((a, b) => a + Math.abs(b.diff), 0);
+    const matchedExtra = BRK.length - openBrk.length;
+    return {
+      themeClass: theme === 'dark' ? 'dark' : '',
+      isDark: theme === 'dark', isLight: theme !== 'dark',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      bank: banks[st.bankIdx], bankMenuOpen: st.bankMenuOpen,
+      toggleBankMenu: () => this.setState({ bankMenuOpen: !st.bankMenuOpen }),
+      banks: banks.map((b, i) => ({ ...b, pick: () => this.setState({ bankIdx: i, bankMenuOpen: false }) })),
+      matchedN: 408 + matchedExtra,
+      matchedNote: 'auto 401 · manual ' + (7 + matchedExtra),
+      rate: ((408 + matchedExtra) / 413 * 100).toFixed(1) + '%',
+      openN: openBrk.length,
+      openColor: openBrk.length ? 'var(--err-fg)' : 'var(--ok-fg)',
+      openBorder: openBrk.length ? 'var(--err)' : 'var(--border)',
+      openValue: this.fmt(absOpen),
+      explained: (diffSum + resolvedSum >= 0 ? '+' : '−') + this.fmt(Math.abs(diffSum + resolvedSum)),
+      proofTone: 't-ok', proofLabel: 'Balances',
+      proofNote: openBrk.length + ' open (' + (diffSum >= 0 ? '+' : '−') + this.fmt(Math.abs(diffSum)) + ') + ' + matchedExtra + ' resolved (' + (resolvedSum >= 0 ? '+' : '−') + this.fmt(Math.abs(resolvedSum)) + ')',
+      filters: [['all', 'All'], ['m', 'Matched'], ['b', 'Unmatched']].map(o => ({ label: o[1], cls: st.filter === o[0] ? 'on' : '', pick: () => this.setState({ filter: o[0] }) })),
+      shownNote: 'Sample of 10 lines incl. every break',
+      rows,
+      selTitle: sr.s ? 'NtryRef ' + sr.s.ref : 'Ledger ' + sr.l.j + ' · no statement entry',
+      selTone: sr.kind === 'm' ? 't-ok' : 't-err', selRule: sr.kind === 'm' ? 'Matched · ' + sr.rule : (sr.brk + ' · ' + sr.rule),
+      selHasXml: !!sr.s, selNoXml: !sr.s,
+      xmlLines: sr.s ? this.ntry(sr.s) : [],
+      selExplain: sr.note || ('Matched on ' + (sr.rule === 'UETR' ? 'UETR — the strongest key, unique per payment.' : 'reference and amount.')),
+      breaks: BRK.map(b => ({ ...b, diff: (b.diff >= 0 ? '+' : '−') + this.fmt(Math.abs(b.diff)), open: isOpen(b.id), done: !isOpen(b.id),
+        resolve: () => this.setState({ resolved: { ...this.state.resolved, [b.id]: true } }),
+        undo: () => { const n = { ...this.state.resolved }; delete n[b.id]; this.setState({ resolved: n }); },
+        focus: () => this.setState({ sel: b.row, filter: 'all' }) }))
+    };
+  }
+}
+</script>
+</body>
+</html>

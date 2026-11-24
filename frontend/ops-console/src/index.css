@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — copied from design/*.dc.html (the `.mp` / `.mp.dark` blocks) so the console
+ * matches the Claude Design export. Components use them through Tailwind utilities such as
+ * `bg-surface`, `text-muted`, `border-line`, `text-ok-fg`.
+ */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface2: #f8f9fb;
+  --border: #e1e4e9;
+  --border2: #eceef1;
+  --fg: #111827;
+  --muted: #566070;
+  --accent: #3550d0;
+  --accent-bg: #eceffc;
+  --ok-bg: #e3f3e8;
+  --ok-fg: #13662c;
+  --ok: #1e8e44;
+  --info-bg: #e6eefd;
+  --info-fg: #1a52bd;
+  --info: #2f6fe4;
+  --warn-bg: #fdf1d8;
+  --warn-fg: #7f4a00;
+  --warn: #d98e04;
+  --err-bg: #fce6e6;
+  --err-fg: #ae2116;
+  --err: #d93a2e;
+  --on-accent: #ffffff;
+  color-scheme: light;
+}
+
+:root.dark {
+  --bg: #0b0e13;
+  --surface: #12161d;
+  --surface2: #171c24;
+  --border: #262d38;
+  --border2: #1d232c;
+  --fg: #e7eaee;
+  --muted: #a1aab7;
+  --accent: #93a6ff;
+  --accent-bg: #1c2440;
+  --ok-bg: #0f2a19;
+  --ok-fg: #74d893;
+  --ok: #3fb866;
+  --info-bg: #10213f;
+  --info-fg: #86b4ff;
+  --info: #4a8bf0;
+  --warn-bg: #2e2208;
+  --warn-fg: #f3c557;
+  --warn: #e3a21a;
+  --err-bg: #35141a;
+  --err-fg: #ff9191;
+  --err: #ef5a4e;
+  --on-accent: #0b0e13;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-line: var(--border);
+  --color-line2: var(--border2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-on-accent: var(--on-accent);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-fg: var(--ok-fg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-info-fg: var(--info-fg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-fg: var(--warn-fg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-err-fg: var(--err-fg);
+}
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  /* Monospace for identifiers and amounts; tabular digits so columns of money line up. */
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .lbl {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  /* Dense data table, as in the design's `.tbl.dense`. */
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .tbl th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border2);
+    background: var(--surface2);
+    white-space: nowrap;
+  }
+  .tbl td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border2);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .tbl tr:last-child td {
+    border-bottom: 0;
+  }
+  .tbl tbody tr.clickable {
+    cursor: pointer;
+  }
+  .tbl tbody tr.clickable:hover td {
+    background: var(--surface2);
+  }
+  .tbl tbody tr.selected td {
+    background: var(--accent-bg);
+  }
+}

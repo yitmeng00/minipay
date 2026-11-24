@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MiniPay · Sanctions queue</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.mp{--bg:#F5F6F8;--surface:#FFFFFF;--surface2:#F8F9FB;--border:#E1E4E9;--border2:#ECEEF1;--fg:#111827;--muted:#566070;--accent:#3550D0;--accent-bg:#ECEFFC;--ok-bg:#E3F3E8;--ok-fg:#13662C;--ok:#1E8E44;--info-bg:#E6EEFD;--info-fg:#1A52BD;--info:#2F6FE4;--warn-bg:#FDF1D8;--warn-fg:#7F4A00;--warn:#D98E04;--err-bg:#FCE6E6;--err-fg:#AE2116;--err:#D93A2E;--track:#EEF0F3;font-family:Inter,system-ui,sans-serif;color:var(--fg);background:var(--bg);font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased}
+.mp.dark{--bg:#0B0E13;--surface:#12161D;--surface2:#171C24;--border:#262D38;--border2:#1D232C;--fg:#E7EAEE;--muted:#A1AAB7;--accent:#93A6FF;--accent-bg:#1C2440;--ok-bg:#0F2A19;--ok-fg:#74D893;--ok:#3FB866;--info-bg:#10213F;--info-fg:#86B4FF;--info:#4A8BF0;--warn-bg:#2E2208;--warn-fg:#F3C557;--warn:#E3A21A;--err-bg:#35141A;--err-fg:#FF9191;--err:#EF5A4E;--track:#1F2630}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.02em;white-space:nowrap;line-height:18px}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.t-ok{background:var(--ok-bg);color:var(--ok-fg)}.t-info{background:var(--info-bg);color:var(--info-fg)}.t-warn{background:var(--warn-bg);color:var(--warn-fg)}.t-err{background:var(--err-bg);color:var(--err-fg)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border2)}
+.card-t{margin:0;font-size:13px;font-weight:600}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:8px 16px;border-bottom:1px solid var(--border2);white-space:nowrap}
+.tbl td{padding:10px 16px;border-bottom:1px solid var(--border2);white-space:nowrap;vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:var(--muted);text-decoration:none;font-weight:500}
+.nav a:hover{background:var(--surface2);color:var(--fg)}
+.nav a.on{background:var(--accent-bg);color:var(--accent)}
+.navsec{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:14px 10px 6px}
+.badge{margin-left:auto;font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;line-height:18px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--fg);font:inherit;font-weight:500;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{background:var(--surface2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.mp.dark .btn.primary{color:#0B0E13}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:500;height:30px;padding:0 12px;cursor:pointer}
+.seg button.on{background:var(--accent-bg);color:var(--accent)}
+.input{height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:0 10px;box-sizing:border-box}
+.lbl{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.menu{position:absolute;top:38px;left:0;z-index:5;width:280px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px}
+.menu button{display:flex;width:100%;align-items:center;gap:10px;border:0;background:transparent;color:var(--fg);font:inherit;text-align:left;padding:8px 10px;border-radius:6px;cursor:pointer}
+.menu button:hover{background:var(--surface2)}
+a{color:var(--accent)}a:hover{color:var(--fg)}
+.bar{flex:1 1 0;border-radius:3px 3px 0 0;background:var(--accent);min-width:0}
+.bar.partial{opacity:.45}
+.bar.future{background:transparent}
+.tab{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:500;padding:8px 12px;margin-bottom:-1px;border-bottom:2px solid transparent;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.tab:hover{color:var(--fg)}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tabcount{font-size:11px;font-weight:600;padding:0 6px;border-radius:999px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted)}
+.tbl.dense th{padding:8px 10px;background:var(--surface2)}
+.tbl.dense td{padding:7px 10px}
+.tbl.dense tr:hover td{background:var(--surface2)}
+.tbl.dense tr.selrow td{background:var(--accent-bg)}
+.ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dir{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:12px;font-weight:700}
+.dir.out{background:var(--info-bg);color:var(--info-fg)}
+.dir.in{background:var(--ok-bg);color:var(--ok-fg)}
+input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);margin:0;cursor:pointer}
+.mp{--x-tag:#1A52BD;--x-attr:#8A4B00;--x-str:#13662C;--x-p:#646D7A;--code-bg:#F8F9FB}
+.mp.dark{--x-tag:#86B4FF;--x-attr:#F3C557;--x-str:#74D893;--x-p:#8A94A3;--code-bg:#0E1218}
+.node{position:relative;z-index:1;width:24px;height:24px;box-sizing:border-box;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.node.ok{background:var(--ok);color:var(--surface)}
+.node.skip{background:var(--surface);border:2px dashed var(--muted)}
+.node.err{background:var(--err);color:#fff}
+.line{position:absolute;top:11px;left:50%;width:100%;height:0;border-top:2px solid var(--ok)}
+.line.dashed{border-top:2px dashed var(--muted)}
+.msg{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--fg);font:inherit;padding:9px 10px;border-radius:6px;cursor:pointer}
+.msg:hover{background:var(--surface2)}
+.msg.on{background:var(--accent-bg);border-color:var(--border)}
+.code{background:var(--code-bg);font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;line-height:20px}
+.cl{display:flex;white-space:pre}
+.ln{flex:0 0 44px;text-align:right;padding-right:14px;color:var(--x-p);user-select:none;opacity:.8}
+.x-tag{color:var(--x-tag)}.x-attr{color:var(--x-attr)}.x-str{color:var(--x-str)}.x-p,.x-cmt{color:var(--x-p)}.x-text{color:var(--fg)}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label,.flabel{font-size:12px;font-weight:600;color:var(--fg)}
+.hint{font-size:11px;color:var(--muted)}
+.input:focus,.ta:focus,.sel:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+.input.bad{border-color:var(--err)}.input.good{border-color:var(--ok)}
+.ta{border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:8px 10px;resize:vertical;box-sizing:border-box;width:100%}
+.sel{height:32px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);font:inherit;padding:0 8px;box-sizing:border-box}
+.seg2{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.seg2 button{flex:1;border:0;border-right:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;padding:7px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px}
+.seg2 button:last-child{border-right:0}
+.seg2 button.on{background:var(--accent-bg);color:var(--accent)}
+.ac{position:absolute;top:100%;left:0;right:0;margin-top:4px;z-index:6;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:4px;max-height:260px;overflow:auto}
+.ac button{display:flex;width:100%;gap:10px;align-items:center;justify-content:space-between;border:0;background:transparent;color:var(--fg);font:inherit;text-align:left;padding:7px 8px;border-radius:6px;cursor:pointer}
+.ac button:hover{background:var(--surface2)}
+.seggrid{display:flex;flex-wrap:wrap;gap:4px}
+.sg{display:flex;flex-direction:column;align-items:center;gap:4px}
+.sg .v{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:15px;font-weight:500;padding:6px 8px;border-radius:5px;letter-spacing:.06em}
+.sg .k{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.s-cc{background:var(--info-bg);color:var(--info-fg)}.s-ck{background:var(--warn-bg);color:var(--warn-fg)}.s-bk{background:var(--ok-bg);color:var(--ok-fg)}.s-br{background:var(--accent-bg);color:var(--accent)}.s-ac{background:var(--surface2);color:var(--fg);border:1px solid var(--border)}.s-nk{background:var(--err-bg);color:var(--err-fg)}
+.chk{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.chk .i{flex:0 0 16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;margin-top:1px}
+.chk .i.ok{background:var(--ok);color:var(--surface)}.chk .i.err{background:var(--err);color:#fff}.chk .i.warn{background:var(--warn);color:#111}
+.qitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--border2);background:transparent;color:var(--fg);font:inherit;padding:11px 14px;cursor:pointer}
+.qitem:hover{background:var(--surface2)}
+.qitem.on{background:var(--accent-bg);box-shadow:inset 3px 0 0 var(--accent)}
+.score{display:inline-flex;align-items:center;gap:6px}
+.score .trk{width:54px;height:6px;border-radius:3px;background:var(--track);overflow:hidden}
+mark{background:var(--warn-bg);color:var(--warn-fg);border-radius:3px;padding:0 2px;font-weight:600}
+</style>
+</helmet>
+<div class="mp {{themeClass}}" style="display: flex; flex-wrap: wrap; min-height: 100vh">
+
+<aside style="flex: 1 1 232px; max-width: 100%; box-sizing: border-box; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 4px 10px 12px">
+<div style="width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: flex; align-items: center; justify-content: center">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--surface)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l5-10 3 6 3-6 5 10"/></svg>
+</div>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 14px; letter-spacing: -0.01em">MiniPay</span>
+<span style="font-size: 11px; color: var(--muted)">Operations console</span>
+</div>
+</div>
+<nav class="nav" aria-label="Main">
+<div class="navsec">Monitor</div>
+<a href="Main.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview</a>
+<a href="Payments.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16l-4-4M20 17H4l4 4"/></svg>Payments</a>
+<a href="Sanctions.dc.html" class="on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/></svg>Sanctions queue<span class="badge t-warn">7</span></a>
+<a href="Settlement.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>Settlement</a>
+<a href="Reconciliation.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12l3 3 5-6"/></svg>Reconciliation<span class="badge t-err">4</span></a>
+<div class="navsec">Operate</div>
+<a href="CreatePayment.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Create payment</a>
+<a href="Accounts.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6M5 10v8M10 10v8M14 10v8M19 10v8M3 21h18"/></svg>Accounts &amp; ledger</a>
+<a href="ReferenceData.dc.html"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h11a3 3 0 013 3v13H7a3 3 0 01-3-3z"/><path d="M4 17a3 3 0 013-3h11"/></svg>Reference data</a>
+</nav>
+<div style="margin-top: auto; padding: 12px 10px 4px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border2)">
+<span class="chip t-warn" style="align-self: flex-start">SIMULATION</span>
+<div style="display: flex; align-items: center; gap: 10px">
+<div style="width: 28px; height: 28px; border-radius: 50%; background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700">NR</div>
+<div style="display: flex; flex-direction: column; line-height: 1.3">
+<span style="font-weight: 600">Nadia Rahman</span>
+<span style="font-size: 11px; color: var(--muted)">Payment Ops · L2</span>
+</div>
+</div>
+</div>
+</aside>
+
+<div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--border)">
+<div style="position: relative">
+<button class="btn" onClick="{{toggleBankMenu}}" aria-haspopup="true" aria-label="Switch bank">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--ok)"></span>
+<span style="font-weight: 600">{{bank.name}}</span>
+<span class="mono" style="color: var(--muted)">{{bank.bic}}</span>
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+</button>
+<sc-if value="{{bankMenuOpen}}" hint-placeholder-val="{{ false }}">
+<div class="menu">
+<sc-for list="{{banks}}" as="b" hint-placeholder-count="3">
+<button onClick="{{b.pick}}">
+<span style="width: 8px; height: 8px; border-radius: 50%; background: var(--ok)"></span>
+<span style="display: flex; flex-direction: column; line-height: 1.3"><span style="font-weight: 600">{{b.name}} · {{b.city}}</span><span class="mono" style="color: var(--muted)">{{b.bic}} · {{b.role}}</span></span>
+</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+<label style="flex: 1 1 320px; position: relative; display: flex; align-items: center">
+<svg style="position: absolute; left: 10px; color: var(--muted)" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+<input class="input" type="search" placeholder="Search by UETR, BIC, IBAN or end-to-end ID" aria-label="Global search" style="width: 100%; padding-left: 32px; padding-right: 40px; background: var(--surface2)">
+<span class="mono" style="position: absolute; right: 8px; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px">/</span>
+</label>
+<div style="display: flex; align-items: center; gap: 14px; margin-left: auto">
+<span style="font-size: 12px; color: var(--muted)"><span class="mono" style="color: var(--fg)">14:02:17</span> MYT · Business date 24 Nov 2026</span>
+<button class="btn" onClick="{{toggleTheme}}" aria-label="Toggle light or dark mode" style="width: 32px; padding: 0; justify-content: center">
+<sc-if value="{{isDark}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></sc-if>
+<sc-if value="{{isLight}}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg></sc-if>
+</button>
+<button class="btn" aria-label="Notifications, 6 unread" style="width: 32px; padding: 0; justify-content: center; position: relative">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4"/></svg>
+<span style="position: absolute; top: 5px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--err)"></span>
+</button>
+</div>
+</header>
+
+<main style="padding: 24px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; width: 100%">
+
+<div style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em">Sanctions screening queue</h1>
+<p style="margin: 2px 0 0; color: var(--muted)">Payments held at SCREENED · lists are simulated snapshots dated 2026-11-20 · decisions are four-eyes for scores ≥ 90</p>
+</div>
+<div style="display: flex; gap: 8px"><button class="btn">Screening rules</button><button class="btn">Export decisions</button></div>
+</div>
+
+<section aria-label="Queue figures" style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+<div class="card" style="padding: 12px 16px"><span class="lbl">Pending review</span><div style="font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums">{{pendingCount}}</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Oldest hold</span><div style="font-size: 22px; font-weight: 600">1h 12m <span class="chip t-warn" style="vertical-align: middle">SLA 2h</span></div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Released today</span><div style="font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums">{{releasedCount}}</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Rejected today</span><div style="font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums">{{rejectedCount}}</div></div>
+<div class="card" style="padding: 12px 16px"><span class="lbl">Median decision time</span><div style="font-size: 22px; font-weight: 600">18m</div></div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+
+<section class="card" style="flex: 1 1 380px; max-width: 460px; min-width: 0; overflow: hidden">
+<div class="card-h">
+<h2 class="card-t">Held payments</h2>
+<div class="seg" role="group" aria-label="List source"><sc-for list="{{srcOpts}}" as="o" hint-placeholder-count="3"><button class="{{o.cls}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+</div>
+<div role="listbox" aria-label="Held payments">
+<sc-for list="{{items}}" as="it" hint-placeholder-count="7">
+<button class="qitem {{it.cls}}" role="option" aria-selected="{{it.sel}}" onClick="{{it.pick}}">
+<span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{it.payName}}</span>
+<span class="mono num" style="font-size: 12px">{{it.ccy}} {{it.amt}}</span>
+<span style="font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap">≈ {{it.matchName}}</span>
+<span class="score"><span class="trk"><span style="display: block; height: 6px; width: {{it.score}}%; background: {{it.scoreColor}}"></span></span><span class="mono" style="font-size: 12px; font-weight: 600">{{it.score}}</span></span>
+<span style="display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted)"><span class="chip t-info" style="font-size: 10px">{{it.list}}</span><span>{{it.party}}</span></span>
+<span style="font-size: 11px; text-align: right"><sc-if value="{{it.pending}}" hint-placeholder-val="{{ true }}"><span style="color: {{it.ageColor}}">held {{it.age}}</span></sc-if><sc-if value="{{it.decided}}" hint-placeholder-val="{{ false }}"><span class="chip {{it.decTone}}" style="font-size: 10px">{{it.decLabel}}</span></sc-if></span>
+</button>
+</sc-for>
+</div>
+</section>
+
+<section class="card" style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+<div class="card-h" style="align-items: flex-start">
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><h2 class="card-t" style="font-size: 15px">Review · {{cur.payName}}</h2><span class="chip t-warn">HELD</span><span class="chip t-info">{{cur.listFull}}</span></div>
+<span style="font-size: 12px; color: var(--muted)"><span class="mono">{{cur.uetr}}</span> · {{cur.dirLabel}} · matched on {{cur.field}}</span>
+</div>
+<div style="text-align: right; flex: 0 0 auto">
+<div class="mono" style="font-size: 18px; font-weight: 600">{{cur.ccy}} {{cur.amt}}</div>
+<div style="font-size: 12px; color: var(--muted)">Held {{cur.heldAt}} · <span style="color: {{cur.ageColor}}">{{cur.slaLeft}}</span></div>
+</div>
+</div>
+
+<div style="padding: 14px 16px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; border-bottom: 1px solid var(--border2)">
+<span><span style="color: var(--muted)">Debtor</span> {{cur.debtor}}</span>
+<span><span style="color: var(--muted)">Creditor</span> {{cur.creditor}}</span>
+<span><span style="color: var(--muted)">Route</span> <span class="mono">{{cur.route}}</span></span>
+<a href="PaymentDetail.dc.html" style="margin-left: auto">Open payment →</a>
+</div>
+
+<div style="overflow-x: auto">
+<table class="tbl dense" style="table-layout: fixed">
+<colgroup><col style="width: 130px"><col><col><col style="width: 96px"></colgroup>
+<thead><tr><th>Attribute</th><th>Payment party</th><th>List entry · <span class="mono" style="text-transform: none">{{cur.listId}}</span></th><th>Match</th></tr></thead>
+<tbody>
+<tr>
+<td style="color: var(--muted)">Name</td>
+<td style="white-space: normal; font-weight: 500"><sc-for list="{{cur.payTok}}" as="tk" hint-placeholder-count="3"><sc-if value="{{tk.m}}" hint-placeholder-val="{{ false }}"><mark>{{tk.t}}</mark> </sc-if><sc-if value="{{tk.n}}" hint-placeholder-val="{{ true }}"><span>{{tk.t}} </span></sc-if></sc-for></td>
+<td style="white-space: normal; font-weight: 500"><sc-for list="{{cur.listTok}}" as="tk" hint-placeholder-count="3"><sc-if value="{{tk.m}}" hint-placeholder-val="{{ false }}"><mark>{{tk.t}}</mark> </sc-if><sc-if value="{{tk.n}}" hint-placeholder-val="{{ true }}"><span>{{tk.t}} </span></sc-if></sc-for></td>
+<td><span class="chip t-warn" style="font-size: 10px">Partial</span></td>
+</tr>
+<sc-for list="{{cur.rows}}" as="r" hint-placeholder-count="6">
+<tr>
+<td style="color: var(--muted)">{{r.k}}</td>
+<td class="{{r.cls}}" style="white-space: normal">{{r.p}}</td>
+<td class="{{r.cls}}" style="white-space: normal">{{r.l}}</td>
+<td><span class="chip {{r.tone}}" style="font-size: 10px">{{r.m}}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--border2)">
+<div style="padding: 14px 16px; border-right: 1px solid var(--border2); display: flex; flex-direction: column; gap: 9px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><span class="lbl">Score breakdown</span><span class="mono" style="font-size: 18px; font-weight: 600">{{cur.score}}<span style="font-size: 12px; color: var(--muted)"> / 100</span></span></div>
+<sc-for list="{{cur.factors}}" as="fx" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 48px; gap: 10px; align-items: center; font-size: 12px">
+<span style="color: var(--muted)">{{fx.k}}</span>
+<span style="height: 6px; border-radius: 3px; background: var(--track); overflow: hidden"><span style="display: block; height: 6px; width: {{fx.pct}}%; background: {{fx.color}}"></span></span>
+<span class="mono" style="text-align: right">{{fx.v}}</span>
+</div>
+</sc-for>
+<div style="margin-top: 4px; padding: 8px 10px; border-radius: 6px; background: var(--surface2); font-size: 12px"><span style="font-weight: 600">Engine hint:</span> {{cur.hint}}</div>
+</div>
+
+<div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+<span class="lbl">Decision</span>
+<sc-if value="{{curPending}}" hint-placeholder-val="{{ true }}">
+<div class="field">
+<label for="reason">Reason</label>
+<select id="reason" class="sel" value="{{curReason}}" onChange="{{setReason}}">
+<option value="fp">False positive — different entity</option>
+<option value="tm">True match — sanctioned party</option>
+<option value="esc">Insufficient information — escalate to MLRO</option>
+</select>
+</div>
+<div class="field">
+<label for="cmt">Comment <span style="color: var(--err-fg)">*</span></label>
+<textarea id="cmt" class="ta" rows="3" value="{{curComment}}" onChange="{{setComment}}" placeholder="Explain which identifiers rule the match in or out (min. 20 characters)" aria-required="true" aria-describedby="cmt-h"></textarea>
+<span id="cmt-h" class="hint" style="display: flex; justify-content: space-between"><span style="color: {{cmtColor}}">{{cmtMsg}}</span><span class="mono">{{cmtLen}}/500</span></span>
+</div>
+<sc-if value="{{fourEyes}}" hint-placeholder-val="{{ false }}"><span class="hint" style="color: var(--warn-fg)">Score ≥ 90 — release goes to a second approver before the payment continues.</span></sc-if>
+<div style="display: flex; gap: 8px">
+<button class="btn" style="flex: 1; justify-content: center; border-color: var(--ok); color: var(--ok-fg); opacity: {{btnOpacity}}" disabled="{{cannotDecide}}" onClick="{{release}}">Release</button>
+<button class="btn" style="flex: 1; justify-content: center; border-color: var(--err); color: var(--err-fg); opacity: {{btnOpacity}}" disabled="{{cannotDecide}}" onClick="{{reject}}">Reject</button>
+</div>
+</sc-if>
+<sc-if value="{{curDecided}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 10px 12px; border-radius: 6px; background: {{decBg}}; color: {{decFg}}; display: flex; flex-direction: column; gap: 4px">
+<span style="font-weight: 600">{{decTitle}}</span>
+<span style="font-size: 12px">“{{curComment}}”</span>
+<span style="font-size: 11px">n.rahman@bank-a · 14:02:31</span>
+</div>
+<button class="btn" onClick="{{undo}}" style="align-self: flex-start">Undo (within 5 min)</button>
+</sc-if>
+</div>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { theme: null, bankIdx: 0, bankMenuOpen: false, src: 'all', cur: 0, comments: { 0: 'Different entity: GB company reg 09811234, Leeds address; list entry is a UAE free-zone' }, reasons: {}, decided: {} };
+  }
+  data() {
+    const R = (k, p, l, m) => ({ k, p, l, m });
+    return [
+      { uetr: '2b6e0f47-81c9-4a3d-9f12-d7a5e3c80b19', dir: 'Outbound', party: 'Creditor', field: 'Cdtr/Nm', payName: 'Oakridge Interiors Ltd', matchName: 'OAKRIDGE INTERIORS TRADING FZE', list: 'EU', listFull: 'EU consolidated (sim)', listId: 'EU.SIM.4417', score: 91, amt: '7,840.00', ccy: 'GBP', heldAt: '12:50:14', age: '1h 12m', ageMin: 72, debtor: 'Muar Furniture Works Sdn Bhd', creditor: 'Oakridge Interiors Ltd', route: 'MNPAMYKLXXX → MNPCGB2LXXX', match: ['OAKRIDGE', 'INTERIORS'],
+        rows: [R('Aliases', '—', 'Oak Ridge Interiors; ORI Trading FZE', 'Weak'), R('Country', 'GB', 'AE', 'No'), R('Address', '12 Mill Lane, Leeds LS1 4AP', 'Plot S22, Jebel Ali Free Zone, Dubai', 'No'), R('Registration', 'Companies House 09811234', 'JAFZA licence 18-2231', 'No'), R('Entity type', 'Company', 'Entity', 'Yes'), R('Account / agent', 'GB86MNPC40051288334410 · MNPCGB2LXXX', '—', 'n/a'), R('Listing', '—', '2026-03-14 · Reg. (sim) 2026/118', 'n/a')],
+        factors: [['Name similarity', 93, '0.93'], ['Token overlap', 50, '2 / 4'], ['Country', 0, '0'], ['Address', 4, '0.04']], hint: 'Likely false positive — strong name overlap but no corroborating identifiers.' },
+      { uetr: '1f0a6d93-27c4-4e8b-b351-9a7e2c04d6f8', dir: 'Inbound', party: 'Debtor', field: 'Dbtr/Nm', payName: 'Northbridge Capital LLC', matchName: 'NORTH BRIDGE CAPITAL HOLDINGS LTD', list: 'OFAC', listFull: 'OFAC SDN (sim)', listId: 'SDN.SIM-20931', score: 88, amt: '96,500.00', ccy: 'USD', heldAt: '13:04:41', age: '58m', ageMin: 58, debtor: 'Northbridge Capital LLC', creditor: 'Selangor Precision Components Sdn Bhd', route: 'MNPUUS33XXX → MNPAMYKLXXX', match: ['CAPITAL', 'NORTHBRIDGE', 'NORTH', 'BRIDGE'],
+        rows: [R('Aliases', '—', 'NBC Holdings; Northbridge Cap.', 'Partial'), R('Country', 'US', 'CY', 'No'), R('Address', '500 Lexington Ave, New York NY', '14 Arch. Makariou III, Limassol', 'No'), R('Registration', 'Delaware 7712093', 'HE 418833', 'No'), R('Entity type', 'Company', 'Entity', 'Yes'), R('Account / agent', '0041-882910-77 · MNPUUS33XXX', '—', 'n/a'), R('Listing', '—', '2025-09-02 · Program SIM-FIN', 'n/a')],
+        factors: [['Name similarity', 90, '0.90'], ['Token overlap', 50, '2 / 4'], ['Country', 0, '0'], ['Alias', 60, '0.60']], hint: 'Alias “Northbridge Cap.” raises the score — check the US registration against the list entity.' },
+      { uetr: '7c3d81e5-f046-4b92-a7d8-36e5b0a14c27', dir: 'Outbound', party: 'Creditor', field: 'Cdtr/Nm', payName: 'Baltic Amber Freight OÜ', matchName: 'BALTIC AMBER SHIPPING CO', list: 'EU', listFull: 'EU consolidated (sim)', listId: 'EU.SIM.3902', score: 87, amt: '33,120.00', ccy: 'EUR', heldAt: '13:22:09', age: '40m', ageMin: 40, debtor: 'Kuching Timber Exports Bhd', creditor: 'Baltic Amber Freight OÜ', route: 'MNPAMYKLXXX → MNPBDEFFXXX → (EE)', match: ['BALTIC', 'AMBER'],
+        rows: [R('Aliases', '—', 'BA Shipping; Baltic Amber Freight', 'Strong'), R('Country', 'EE', 'EE', 'Yes'), R('Address', 'Sadama 25, 10111 Tallinn', 'Sadama 9, 10111 Tallinn', 'Partial'), R('Registration', 'Reg. 14882231', 'Reg. 10992817', 'No'), R('Entity type', 'Company', 'Company', 'Yes'), R('Account / agent', 'EE-account via MNPBDEFFXXX', '—', 'n/a'), R('Listing', '—', '2026-07-30 · Reg. (sim) 2026/233', 'n/a')],
+        factors: [['Name similarity', 82, '0.82'], ['Token overlap', 67, '2 / 3'], ['Country', 100, '1.00'], ['Alias', 95, '0.95']], hint: 'Escalate — alias is an exact match and the address is on the same street. Verify the registry number.' },
+      { uetr: 'e0b47a2c-5d18-4f6e-9c03-b8a1d72f5e94', dir: 'Outbound', party: 'Creditor', field: 'Cdtr/Nm', payName: 'Svetla Ivanova', matchName: 'IVANOVA, SVETLANA PETROVNA', list: 'EU', listFull: 'EU consolidated (sim)', listId: 'EU.SIM.5120', score: 84, amt: '2,400.00', ccy: 'EUR', heldAt: '13:31:52', age: '31m', ageMin: 31, debtor: 'Lee Mei Ling', creditor: 'Svetla Ivanova', route: 'MNPAMYKLXXX → MNPBDEFFXXX → (BG)', match: ['IVANOVA'],
+        rows: [R('Aliases', '—', 'Svetlana Ivanova', 'Partial'), R('Country', 'BG', 'RU', 'No'), R('Address', 'ul. Rakovski 41, Sofia', '—', 'n/a'), R('Date of birth', 'Not in message', '1971-05-02', 'n/a'), R('Entity type', 'Individual', 'Individual', 'Yes'), R('Account / agent', 'BG IBAN via MNPBDEFFXXX', '—', 'n/a'), R('Listing', '—', '2024-02-23 · Reg. (sim) 2024/41', 'n/a')],
+        factors: [['Name similarity', 84, '0.84'], ['Token overlap', 33, '1 / 3'], ['Country', 0, '0'], ['DOB', 0, 'n/a']], hint: 'Request date of birth from the debtor before deciding — the message carries no DOB.' },
+      { uetr: '5a8e2f17-c9b3-4d40-8e61-0f7d3c92ab58', dir: 'Outbound', party: 'Creditor', field: 'Cdtr/Nm', payName: 'Crescent Marine Supplies Pte Ltd', matchName: 'CRESCENT MARINE SERVICES LTD', list: 'EU', listFull: 'EU consolidated (sim)', listId: 'EU.SIM.2288', score: 82, amt: '14,260.00', ccy: 'USD', heldAt: '13:40:27', age: '22m', ageMin: 22, debtor: 'Penang Semicon Test Sdn Bhd', creditor: 'Crescent Marine Supplies Pte Ltd', route: 'MNPAMYKLXXX → MNPUUS33XXX → (SG)', match: ['CRESCENT', 'MARINE', 'LTD'],
+        rows: [R('Aliases', '—', 'CMS Ltd', 'Weak'), R('Country', 'SG', 'PA', 'No'), R('Address', '8 Jurong Port Rd, Singapore', 'Calle 50, Panama City', 'No'), R('Registration', 'UEN 201912284K', 'Folio 155623', 'No'), R('Entity type', 'Company', 'Company', 'Yes'), R('Account / agent', 'SG account via MNPUUS33XXX', '—', 'n/a'), R('Listing', '—', '2025-12-11 · Reg. (sim) 2025/310', 'n/a')],
+        factors: [['Name similarity', 85, '0.85'], ['Token overlap', 60, '3 / 5'], ['Country', 0, '0'], ['Address', 0, '0']], hint: 'Likely false positive — generic words drive the score; country and registry differ.' },
+      { uetr: '8d26f4b0-3e71-4a95-b2c8-e15f07a9d643', dir: 'Outbound', party: 'Creditor', field: 'Cdtr/Nm', payName: 'Pacific Delta Minerals Ltd', matchName: 'PACIFIC DELTA MINING CORP', list: 'OFAC', listFull: 'OFAC SDN (sim)', listId: 'SDN.SIM-31877', score: 80, amt: '61,750.00', ccy: 'USD', heldAt: '13:48:03', age: '14m', ageMin: 14, debtor: 'Klang Valley Robotics Sdn Bhd', creditor: 'Pacific Delta Minerals Ltd', route: 'MNPAMYKLXXX → MNPUUS33XXX → (AU)', match: ['PACIFIC', 'DELTA'],
+        rows: [R('Aliases', '—', 'PDM Corp', 'No'), R('Country', 'AU', 'PH', 'No'), R('Address', '120 St Georges Tce, Perth', 'Ayala Ave, Makati', 'No'), R('Registration', 'ACN 612 448 093', 'SEC CS2011-0442', 'No'), R('Entity type', 'Company', 'Company', 'Yes'), R('Account / agent', 'AU account via MNPUUS33XXX', '—', 'n/a'), R('Listing', '—', '2023-06-19 · Program SIM-MIN', 'n/a')],
+        factors: [['Name similarity', 80, '0.80'], ['Token overlap', 50, '2 / 4'], ['Country', 0, '0'], ['Address', 0, '0']], hint: 'Likely false positive — sector and name overlap only.' },
+      { uetr: '3e91c5d8-6b2a-4f07-a4e9-72c0d18b5f36', dir: 'Inbound', party: 'Debtor', field: 'Dbtr/Nm', payName: 'Halvorsen Shipping AS', matchName: 'HALVORSEN MARITIME AS', list: 'EU', listFull: 'EU consolidated (sim)', listId: 'EU.SIM.6031', score: 79, amt: '18,900.00', ccy: 'EUR', heldAt: '13:55:40', age: '7m', ageMin: 7, debtor: 'Halvorsen Shipping AS', creditor: 'Muar Furniture Works Sdn Bhd', route: 'MNPBDEFFXXX → MNPAMYKLXXX', match: ['HALVORSEN', 'AS'],
+        rows: [R('Aliases', '—', 'Halvorsen Mar.', 'Weak'), R('Country', 'NO', 'NO', 'Yes'), R('Address', 'Strandkaien 12, Bergen', 'Havnegata 3, Tromsø', 'No'), R('Registration', 'Org.nr 918 442 107', 'Org.nr 987 120 554', 'No'), R('Entity type', 'Company', 'Company', 'Yes'), R('Account / agent', 'DE51500100600123456789 · MNPBDEFFXXX', '—', 'n/a'), R('Listing', '—', '2026-05-08 · Reg. (sim) 2026/170', 'n/a')],
+        factors: [['Name similarity', 78, '0.78'], ['Token overlap', 67, '2 / 3'], ['Country', 100, '1.00'], ['Address', 0, '0']], hint: 'Same country and surname — compare organisation numbers before releasing.' }
+    ];
+  }
+  tok(s, set) { return s.split(/\s+/).map(t => { const k = t.replace(/[^A-Za-zÀ-ž]/g, '').toUpperCase(); const m = set.indexOf(k) >= 0; return { t, m, n: !m }; }); }
+  renderVals() {
+    const st = this.state;
+    const theme = st.theme || this.props.theme || 'light';
+    const banks = [
+      { name: 'Bank A', city: 'Kuala Lumpur', bic: 'MNPAMYKLXXX', role: 'Originating bank' },
+      { name: 'Bank B', city: 'Frankfurt', bic: 'MNPBDEFFXXX', role: 'Correspondent' },
+      { name: 'Bank C', city: 'London', bic: 'MNPCGB2LXXX', role: 'Beneficiary bank' }
+    ];
+    const D = this.data();
+    const matchTone = { Yes: 't-err', Strong: 't-err', Partial: 't-warn', Weak: 't-info', No: 't-ok', 'n/a': '' };
+    const ageColor = (m) => m >= 60 ? 'var(--warn-fg)' : 'var(--muted)';
+    const items = D.map((d, i) => ({ ...d, i }))
+      .filter(d => st.src === 'all' || d.list === st.src)
+      .map(d => {
+        const dec = st.decided[d.i];
+        return { ...d, cls: st.cur === d.i ? 'on' : '', sel: st.cur === d.i ? 'true' : 'false', pick: () => this.setState({ cur: d.i }),
+          scoreColor: d.score >= 90 ? 'var(--err)' : d.score >= 85 ? 'var(--warn)' : 'var(--info)', ageColor: ageColor(d.ageMin),
+          pending: !dec, decided: !!dec, decLabel: dec === 'rel' ? 'Released' : 'Rejected', decTone: dec === 'rel' ? 't-ok' : 't-err' };
+      });
+    const c = D[st.cur];
+    const set = c.match;
+    const cur = { ...c,
+      dirLabel: c.dir + ' · ' + c.party.toLowerCase() + ' screened',
+      ageColor: ageColor(c.ageMin),
+      slaLeft: (120 - c.ageMin) + 'm left of 2h SLA',
+      payTok: this.tok(c.payName, set), listTok: this.tok(c.matchName, set),
+      rows: c.rows.map(r => ({ ...r, tone: matchTone[r.m] || '', cls: /Account|Registration|Address/.test(r.k) ? 'mono' : '' })),
+      factors: c.factors.map(f => ({ k: f[0], pct: f[1], v: f[2], color: f[1] >= 80 ? 'var(--err)' : f[1] >= 50 ? 'var(--warn)' : 'var(--muted)' }))
+    };
+    const comment = st.comments[st.cur] || '';
+    const reason = st.reasons[st.cur] || 'fp';
+    const dec = st.decided[st.cur];
+    const okLen = comment.trim().length >= 20;
+    const decidedVals = Object.values(st.decided);
+    const decide = (v) => () => this.setState({ decided: { ...this.state.decided, [this.state.cur]: v } });
+    return {
+      themeClass: theme === 'dark' ? 'dark' : '',
+      isDark: theme === 'dark', isLight: theme !== 'dark',
+      toggleTheme: () => this.setState({ theme: theme === 'dark' ? 'light' : 'dark' }),
+      bank: banks[st.bankIdx], bankMenuOpen: st.bankMenuOpen,
+      toggleBankMenu: () => this.setState({ bankMenuOpen: !st.bankMenuOpen }),
+      banks: banks.map((b, i) => ({ ...b, pick: () => this.setState({ bankIdx: i, bankMenuOpen: false }) })),
+      srcOpts: [['all', 'All 7'], ['OFAC', 'OFAC 2'], ['EU', 'EU 5']].map(o => ({ label: o[1], cls: st.src === o[0] ? 'on' : '', pick: () => this.setState({ src: o[0] }) })),
+      items, cur,
+      pendingCount: 7 - decidedVals.length,
+      releasedCount: 31 + decidedVals.filter(v => v === 'rel').length,
+      rejectedCount: 2 + decidedVals.filter(v => v === 'rej').length,
+      curPending: !dec, curDecided: !!dec,
+      curComment: comment, curReason: reason,
+      setComment: (e) => this.setState({ comments: { ...this.state.comments, [this.state.cur]: e.target.value.slice(0, 500) } }),
+      setReason: (e) => this.setState({ reasons: { ...this.state.reasons, [this.state.cur]: e.target.value } }),
+      cmtLen: comment.length,
+      cmtMsg: okLen ? 'Comment recorded in the audit log with your decision' : 'Required — ' + Math.max(0, 20 - comment.trim().length) + ' more characters',
+      cmtColor: okLen ? 'var(--muted)' : 'var(--err-fg)',
+      fourEyes: c.score >= 90,
+      cannotDecide: !okLen, btnOpacity: okLen ? '1' : '.45',
+      release: decide('rel'), reject: decide('rej'),
+      undo: () => { const n = { ...this.state.decided }; delete n[this.state.cur]; this.setState({ decided: n }); },
+      decTitle: dec === 'rel' ? (c.score >= 90 ? 'Released — awaiting second approver' : 'Released — payment continues to FUNDS_RESERVED') : 'Rejected — pacs.002 RJCT sent, funds stay with debtor',
+      decBg: dec === 'rel' ? 'var(--ok-bg)' : 'var(--err-bg)',
+      decFg: dec === 'rel' ? 'var(--ok-fg)' : 'var(--err-fg)'
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Bank A — Kuala Lumpur. The originating bank in the demo flows.
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/bank_a
+
+minipay:
+  bank:
+    name: Bank A
+    bic: MNPAMYKLXXX
+    city: Kuala Lumpur
+    role: Originating bank
+    time-zone: Asia/Kuala_Lumpur
+  seed:
+    enabled: true
+    # Nostro balances are not seeded directly: they are the contra side of the customer deposits
+    # they back. Malaysia has no IBAN, so domestic customers have plain account numbers.
+    accounts:
+      # --- Settlement & nostro accounts (assets)
+      - { number: 1001-MYR-RENTAS, type: NOSTRO, currency: MYR, owner: "RENTAS settlement account (central bank)", counterparty-bic: MNCBMYKLXXX }
+      - { number: 1101-EUR-MNPB,   type: NOSTRO, currency: EUR, owner: "Nostro EUR @ Bank B", counterparty-bic: MNPBDEFFXXX }
+      - { number: 1102-GBP-MNPC,   type: NOSTRO, currency: GBP, owner: "Nostro GBP @ Bank C", counterparty-bic: MNPCGB2LXXX }
+      # --- Vostro accounts (liabilities: other banks' money held here)
+      - { number: 2201-MYR-MNPB, type: VOSTRO, currency: MYR, owner: "Vostro - Bank B (MYR)", counterparty-bic: MNPBDEFFXXX, opening-balance: 18440000.00, funded-from: 1001-MYR-RENTAS }
+      - { number: 2202-MYR-MNPC, type: VOSTRO, currency: MYR, owner: "Vostro - Bank C (MYR)", counterparty-bic: MNPCGB2LXXX, opening-balance: 6105300.00,  funded-from: 1001-MYR-RENTAS }
+      # --- Customers (liabilities)
+      - { number: "514087234412", type: CUSTOMER, currency: EUR, owner: "Selangor Precision Components Sdn Bhd", opening-balance: 1252580.18, funded-from: 1101-EUR-MNPB }
+      - { number: "514087611203", type: CUSTOMER, currency: EUR, owner: "Penang Semicon Test Sdn Bhd",           opening-balance: 1640220.55, funded-from: 1101-EUR-MNPB }
+      - { number: "514066120983", type: CUSTOMER, currency: EUR, owner: "Nur Aisyah binti Kamal",                opening-balance: 6812.44,    funded-from: 1101-EUR-MNPB }
+      - { number: "514055218840", type: CUSTOMER, currency: GBP, owner: "Kuching Timber Exports Bhd",            opening-balance: 450102.40,  funded-from: 1102-GBP-MNPC }
+      - { number: "514031907765", type: CUSTOMER, currency: GBP, owner: "Muar Furniture Works Sdn Bhd",          opening-balance: 92410.00,   funded-from: 1102-GBP-MNPC }
+      - { number: "514078003341", type: CUSTOMER, currency: MYR, owner: "Klang Valley Robotics Sdn Bhd",         opening-balance: 2926860.00, funded-from: 1001-MYR-RENTAS }
+      - { number: "514090215568", type: CUSTOMER, currency: MYR, owner: "Lee Mei Ling",                          opening-balance: 48215.62,   funded-from: 1001-MYR-RENTAS }
+      # --- P&L
+      - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - outward transfers EUR" }
+      - { number: 4021-FEE-GBP, type: FEE_INCOME, currency: GBP, owner: "Fee income - outward transfers GBP" }

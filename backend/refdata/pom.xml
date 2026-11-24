@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.minipay</groupId>
+        <artifactId>minipay-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>refdata</artifactId>
+    <name>MiniPay :: Reference data</name>
+    <description>Effective-dated BIC directory, IBAN validation, routing rules, holiday calendars and cut-offs. Placeholder until milestone M3.</description>
+</project>

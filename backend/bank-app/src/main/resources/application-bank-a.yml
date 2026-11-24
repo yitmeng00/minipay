@@ -13,6 +13,12 @@ minipay:
     city: Kuala Lumpur
     role: Originating bank
     time-zone: Asia/Kuala_Lumpur
+  # Our flat fee for an outgoing payment, per currency (charged per charge bearer, see ADR-003).
+  payments:
+    outward-fees:
+      EUR: 20.00
+      GBP: 15.00
+      MYR: 5.00
   seed:
     enabled: true
     # Nostro balances are not seeded directly: they are the contra side of the customer deposits

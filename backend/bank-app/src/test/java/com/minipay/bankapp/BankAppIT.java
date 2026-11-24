@@ -8,7 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.minipay.common.money.Money;
 import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.LedgerApi;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -21,12 +24,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.kafka.KafkaContainer;
 
 /** Boots Bank A as it runs locally (profile bank-a), against a throw-away PostgreSQL. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("bank-a")
 @Import(BankAppIT.Postgres.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class) // seed assertions first, then a payment moves money
 class BankAppIT {
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -35,6 +40,12 @@ class BankAppIT {
         @ServiceConnection
         PostgreSQLContainer<?> postgres() {
             return new PostgreSQLContainer<>("postgres:16-alpine");
+        }
+
+        @Bean
+        @ServiceConnection
+        KafkaContainer kafka() {
+            return new KafkaContainer("apache/kafka:4.0.0");
         }
     }
 
@@ -66,6 +77,24 @@ class BankAppIT {
     }
 
     @Test
+    @Order(Integer.MAX_VALUE)
+    void a_payment_from_bank_a_goes_out_through_the_seeded_nostro() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/payments")
+                        .header("Idempotency-Key", "bank-app-it-1")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"debtorAccount": "514087234412", "creditorName": "Harlow & Finch Engineering Ltd",
+                                 "creditorAccount": "GB67MNPC40051271520093", "creditorAgentBic": "MNPCGB2LXXX",
+                                 "amount": {"amount": "48250.00", "currency": "EUR"}, "chargeBearer": "SHAR"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SENT"))
+                .andExpect(jsonPath("$.instructedAgentBic").value("MNPBDEFFXXX"))
+                .andExpect(jsonPath("$.chargesAmount.amount").value("20.00"));
+        assertThat(ledger.checkIntegrity().ok()).isTrue();
+    }
+
+    @Test
     void bank_info_and_openapi_are_served() throws Exception {
         mvc.perform(get("/api/bank"))
                 .andExpect(status().isOk())
@@ -73,6 +102,7 @@ class BankAppIT {
                 .andExpect(jsonPath("$.timeZone").value("Asia/Kuala_Lumpur"));
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.paths['/api/ledger/reservations']").exists());
+                .andExpect(jsonPath("$.paths['/api/ledger/reservations']").exists())
+                .andExpect(jsonPath("$.paths['/api/payments']").exists());
     }
 }

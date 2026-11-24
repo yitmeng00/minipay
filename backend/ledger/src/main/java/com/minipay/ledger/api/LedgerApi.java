@@ -37,6 +37,9 @@ public interface LedgerApi {
 
     JournalEntryView getEntry(UUID entryId);
 
+    /** Every journal entry booked for a payment hub payment, oldest first (holds, bookings, fees, returns). */
+    List<JournalEntryView> entriesForPayment(UUID paymentId);
+
     StatementView statement(long accountId, LocalDate date);
 
     IntegrityReport checkIntegrity();

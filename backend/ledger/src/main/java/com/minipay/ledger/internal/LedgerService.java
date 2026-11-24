@@ -24,6 +24,7 @@ import com.minipay.ledger.api.ReservationView;
 import com.minipay.ledger.api.ReserveFundsCommand;
 import com.minipay.ledger.api.ReverseEntryCommand;
 import com.minipay.ledger.api.SettleReservationCommand;
+import com.minipay.ledger.api.SettlementLeg;
 import com.minipay.ledger.api.StatementLine;
 import com.minipay.ledger.api.StatementView;
 import com.minipay.ledger.internal.domain.AccountBalance;
@@ -199,42 +200,85 @@ public class LedgerService implements LedgerApi {
     }
 
     /**
-     * Books a held payment: RELEASE the hold and SETTLE (debit the customer's BOOKED balance, credit
-     * the target account), atomically. The customer's available balance is the same before and after —
-     * it already dropped when the funds were reserved.
+     * Books a held payment: RELEASE the hold, then one entry per {@link SettlementLeg} (debit the held
+     * account's BOOKED balance, credit the leg's account) — all atomically. The held account's available
+     * balance is the same before and after: it already dropped when the funds were reserved.
+     *
+     * <p>Idempotency keys: the first leg uses the client's key (that entry is the reservation's
+     * {@code settle_entry_id}); the release uses {@code key/release}, further legs {@code key/2}, {@code key/3}.
      */
     @Override
     public Idempotent<ReservationView> settle(SettleReservationCommand c) {
-        String hash = RequestFingerprint.of("settle", c.reservationId(), c.creditAccountId(), c.narrative(), c.valueDate());
+        String hash = RequestFingerprint.of("settle", c.reservationId(), c.valueDate(),
+                c.legs().stream().map(l -> l.creditAccountId() + ":" + l.amount() + ":" + l.entryType() + ":" + l.narrative()).toList());
         return idempotent(c.idempotencyKey(), hash,
                 entryId -> repo.findReservationByEntry(ReservationEntryColumn.SETTLE, entryId).orElseThrow(),
                 () -> {
                     ReservationView r = lockActiveReservation(c.reservationId());
-                    AccountView credit = getAccount(c.creditAccountId());
-                    if (credit.id() == r.accountId()) {
-                        throw new LedgerException(LedgerError.INVALID_ENTRY, "Cannot settle a hold into the same account");
+                    List<Money> amounts = legAmounts(r, c.legs());
+                    List<Long> accounts = new ArrayList<>(List.of(r.accountId(), holdsControlId(r.amount().currencyCode())));
+                    for (var leg : c.legs()) {
+                        AccountView credit = getAccount(leg.creditAccountId());
+                        if (credit.id() == r.accountId()) {
+                            throw new LedgerException(LedgerError.INVALID_ENTRY, "Cannot settle a hold into the same account");
+                        }
+                        requireCurrency(credit, r.amount());
+                        accounts.add(credit.id());
                     }
-                    requireCurrency(credit, r.amount());
-                    long holds = holdsControlId(r.amount().currencyCode());
-                    Map<Long, AccountBalance> locked = lock(List.of(r.accountId(), holds, credit.id()));
+                    Map<Long, AccountBalance> locked = lock(accounts);
+                    LocalDate valueDate = c.valueDate() != null ? c.valueDate() : businessDate();
 
-                    JournalEntryDraft release = releaseEntry(r, holds, c.idempotencyKey() + "/release", hash,
+                    JournalEntryDraft release = releaseEntry(r, accounts.get(1), c.idempotencyKey() + "/release", hash,
                             "Hold released for settlement");
                     apply(release, locked, FundsCheck.SKIP, Set.of());
 
-                    JournalEntryDraft settle = new JournalEntryDraft(UUID.randomUUID(), EntryType.SETTLE,
-                            c.idempotencyKey(), hash, r.paymentId(), null,
-                            c.valueDate() != null ? c.valueDate() : businessDate(),
-                            c.narrative() != null ? c.narrative() : r.reason(),
-                            List.of(new NewPosting(r.accountId(), Direction.D, r.amount(), BalanceType.BOOKED),
-                                    new NewPosting(credit.id(), Direction.C, r.amount(), BalanceType.BOOKED)));
-                    // The held account's funds were guaranteed by the hold; check everyone else
-                    // (e.g. crediting a nostro reduces it — we cannot send money we do not have there).
-                    apply(settle, locked, FundsCheck.ENFORCE, Set.of(r.accountId()));
-
-                    repo.markReservation(r.id(), ReservationStatus.SETTLED, release.id(), settle.id());
+                    UUID firstEntry = null;
+                    for (int i = 0; i < c.legs().size(); i++) {
+                        var leg = c.legs().get(i);
+                        Money amount = amounts.get(i);
+                        JournalEntryDraft entry = new JournalEntryDraft(UUID.randomUUID(), leg.entryType(),
+                                i == 0 ? c.idempotencyKey() : c.idempotencyKey() + "/" + (i + 1), hash,
+                                r.paymentId(), null, valueDate,
+                                leg.narrative() != null ? leg.narrative() : r.reason(),
+                                List.of(new NewPosting(r.accountId(), Direction.D, amount, BalanceType.BOOKED),
+                                        new NewPosting(leg.creditAccountId(), Direction.C, amount, BalanceType.BOOKED)));
+                        // The held account's funds were guaranteed by the hold; check everyone else
+                        // (e.g. crediting a nostro reduces it — we cannot send money we do not have there).
+                        apply(entry, locked, FundsCheck.ENFORCE, Set.of(r.accountId()));
+                        if (firstEntry == null) {
+                            firstEntry = entry.id();
+                        }
+                    }
+                    repo.markReservation(r.id(), ReservationStatus.SETTLED, release.id(), firstEntry);
                     return repo.findReservation(r.id()).orElseThrow();
                 });
+    }
+
+    /** Resolves each leg's amount; the legs must add up to exactly the held amount. */
+    private static List<Money> legAmounts(ReservationView r, List<SettlementLeg> legs) {
+        Money explicit = Money.zero(r.amount().currency());
+        for (var leg : legs) {
+            if (leg.amount() != null) {
+                requirePositive(leg.amount());
+                if (!leg.amount().currency().equals(r.amount().currency())) {
+                    throw new LedgerException(LedgerError.CURRENCY_NOT_ALLOWED,
+                            "Leg in " + leg.amount().currencyCode() + " for a hold in " + r.amount().currencyCode());
+                }
+                explicit = explicit.plus(leg.amount());
+            }
+        }
+        Money remainder = r.amount().minus(explicit);
+        boolean hasRemainderLeg = legs.stream().anyMatch(l -> l.amount() == null);
+        if (hasRemainderLeg ? !remainder.isPositive() : !remainder.isZero()) {
+            throw new LedgerException(LedgerError.UNBALANCED_ENTRY, "Settlement legs (" + explicit
+                    + ") do not add up to the held amount " + r.amount());
+        }
+        return legs.stream().map(l -> l.amount() != null ? l.amount() : remainder).toList();
+    }
+
+    @Override
+    public List<JournalEntryView> entriesForPayment(UUID paymentId) {
+        return repo.entryIdsForPayment(paymentId).stream().map(id -> repo.findEntry(id).orElseThrow()).toList();
     }
 
     @Override
@@ -426,9 +470,9 @@ public class LedgerService implements LedgerApi {
     /**
      * The idempotency wrapper. Runs {@code work} in a transaction unless the key was used before.
      *
-     * <p>Race: two requests with the same new key arrive together. Both see "not used", both do the work;
-     * the second one's INSERT of the journal entry blocks on the first's unique key and fails once the
-     * first commits. We then retry once — now the key exists — and return the stored result.
+     * <p>Race: two requests with the same new key arrive together. An advisory lock on the key makes the
+     * second wait for the first to commit; it then finds the key and replays. The unique constraint on
+     * {@code idempotency_key} remains as a backstop: if it ever fires, we retry once and replay.
      */
     private <T> Idempotent<T> idempotent(String key, String hash, Function<UUID, T> replay, Supplier<T> work) {
         if (key == null || !IDEMPOTENCY_KEY.matcher(key).matches()) {
@@ -437,6 +481,7 @@ public class LedgerService implements LedgerApi {
         for (int attempt = 0; ; attempt++) {
             try {
                 return tx.execute(s -> {
+                    repo.lockIdempotencyKey(key);
                     Optional<StoredKey> existing = repo.findByIdempotencyKey(key);
                     if (existing.isPresent()) {
                         if (!existing.get().requestHash().equals(hash)) {

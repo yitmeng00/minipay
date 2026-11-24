@@ -1,6 +1,6 @@
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table'
 import { useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Segmented, type Tone } from '../components/ui'
 import { useAccounts, useBankInfo, useIntegrity, useStatement } from '../lib/api'
 import { useBank } from '../lib/banks'
@@ -319,7 +319,13 @@ function StatementBody({ st }: { st: Statement }) {
                     </Chip>
                   </td>
                   <td className="mono text-muted" title={l.paymentId ?? undefined}>
-                    {shortId(l.paymentId)}
+                    {l.paymentId ? (
+                      <Link to={`/payments/${l.paymentId}`} className="text-accent no-underline">
+                        {shortId(l.paymentId)}
+                      </Link>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="max-w-[260px] overflow-hidden text-ellipsis" title={l.narrative ?? undefined}>
                     {l.narrative}

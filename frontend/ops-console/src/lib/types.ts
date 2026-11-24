@@ -87,3 +87,81 @@ export type BankInfo = {
   serverTime: string
   businessDate: string
 }
+
+// ---- Payment hub (com.minipay.paymenthub.api)
+
+export type PaymentStatus =
+  | 'RECEIVED'
+  | 'VALIDATED'
+  | 'SCREENED'
+  | 'HELD_COMPLIANCE'
+  | 'FUNDS_RESERVED'
+  | 'SENT'
+  | 'ACKED'
+  | 'SETTLED'
+  | 'REJECTED'
+  | 'RETURNED'
+
+export type ChargeBearer = 'DEBT' | 'CRED' | 'SHAR'
+
+export type Payment = {
+  id: string
+  uetr: string
+  endToEndId: string
+  instructionId: string
+  direction: 'OUTGOING' | 'INCOMING'
+  status: PaymentStatus
+  amount: Money
+  interbankSettlementAmount: Money | null
+  chargesAmount: Money
+  chargeBearer: ChargeBearer
+  debtorName: string
+  debtorAccount: string
+  debtorAgentBic: string
+  creditorName: string
+  creditorAccount: string
+  creditorAgentBic: string
+  instructedAgentBic: string | null
+  remittanceInformation: string | null
+  requestedExecutionDate: string
+  valueDate: string | null
+  rejectionReason: string | null
+  rejectionDetail: string | null
+  reservationId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type StateChange = {
+  id: number
+  from: PaymentStatus | null
+  to: PaymentStatus
+  reasonCode: string | null
+  detail: string | null
+  actor: string
+  occurredAt: string
+}
+
+export type PaymentDetail = { payment: Payment; history: StateChange[] }
+
+export type Page<T> = { items: T[]; page: number; size: number; total: number }
+
+export type Posting = {
+  id: number
+  accountId: number
+  accountNumber: string
+  direction: 'D' | 'C'
+  amount: Money
+  balanceType: 'BOOKED' | 'RESERVED'
+}
+
+export type JournalEntry = {
+  id: string
+  entryType: EntryType
+  paymentId: string | null
+  reversesEntryId: string | null
+  valueDate: string
+  narrative: string | null
+  createdAt: string
+  postings: Posting[]
+}

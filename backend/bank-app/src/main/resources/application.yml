@@ -12,6 +12,21 @@ spring:
     serialization:
       write-dates-as-timestamps: false
     default-property-inclusion: always
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only checks that the entities match it.
+      ddl-auto: validate
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      # Wait for all in-sync replicas, and let the broker drop duplicate retries (idempotent producer).
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
   datasource:
     username: minipay
     password: minipay
@@ -36,3 +51,5 @@ minipay:
     time-zone: UTC
   seed:
     enabled: false
+  payments:
+    recovery-stale-after: PT30S

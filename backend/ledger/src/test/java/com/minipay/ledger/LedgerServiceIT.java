@@ -138,6 +138,44 @@ class LedgerServiceIT extends LedgerIntegrationTest {
     }
 
     @Test
+    void one_hold_settles_into_principal_and_fee_legs() {
+        AccountView customer = openCustomer("EUR");
+        AccountView nostro = openNostro("EUR");
+        AccountView fees = openFeeIncome("EUR");
+        fund(customer, nostro, "1000.00");
+        UUID paymentId = UUID.randomUUID();
+        // Charge bearer SHAR: the debtor pays our fee, so the hold covers amount + fee.
+        ReservationView hold = ledger.reserve(new ReserveFundsCommand(key(), customer.id(), eur("270.00"), paymentId,
+                "amount + fee")).value();
+
+        ReservationView settled = ledger.settle(new SettleReservationCommand(key(), hold.id(), List.of(
+                com.minipay.ledger.api.SettlementLeg.remainderTo(nostro.id(), "Principal"),
+                new com.minipay.ledger.api.SettlementLeg(fees.id(), eur("20.00"), EntryType.FEE, "Outward fee")), null)).value();
+
+        assertThat(reload(customer).booked()).isEqualTo(eur("730.00"));
+        assertThat(reload(nostro).booked()).isEqualTo(eur("750.00"));
+        assertThat(reload(fees).booked()).isEqualTo(eur("20.00"));
+        assertThat(ledger.getEntry(settled.settleEntryId()).entryType()).isEqualTo(EntryType.SETTLE);
+        assertThat(ledger.entriesForPayment(paymentId)).extracting(JournalEntryView::entryType)
+                .containsExactly(EntryType.RESERVE, EntryType.RELEASE, EntryType.SETTLE, EntryType.FEE);
+    }
+
+    @Test
+    void settlement_legs_must_add_up_to_the_hold() {
+        AccountView customer = openCustomer("EUR");
+        AccountView nostro = openNostro("EUR");
+        AccountView fees = openFeeIncome("EUR");
+        fund(customer, nostro, "100.00");
+        ReservationView hold = ledger.reserve(new ReserveFundsCommand(key(), customer.id(), eur("50.00"), null, null)).value();
+
+        assertError(() -> ledger.settle(new SettleReservationCommand(key(), hold.id(), List.of(
+                new com.minipay.ledger.api.SettlementLeg(nostro.id(), eur("40.00"), EntryType.SETTLE, null),
+                new com.minipay.ledger.api.SettlementLeg(fees.id(), eur("5.00"), EntryType.FEE, null)), null)),
+                LedgerError.UNBALANCED_ENTRY);
+        assertThat(ledger.getReservation(hold.id()).status()).isEqualTo(ReservationStatus.ACTIVE);
+    }
+
+    @Test
     void settle_into_another_currency_is_refused_with_AM03() {
         AccountView customer = openCustomer("EUR");
         AccountView nostro = openNostro("EUR");

@@ -27,10 +27,16 @@ final class LedgerRequests {
     record ReleaseRequest(@Size(max = 140) String reason) {
     }
 
+    /** Either {@code creditAccountId} (whole hold to one account) or {@code legs} (split, e.g. principal + fee). */
     record SettleRequest(
-            @NotNull Long creditAccountId,
+            Long creditAccountId,
             @Size(max = 140) String narrative,
-            LocalDate valueDate) {
+            LocalDate valueDate,
+            List<@Valid SettlementLegRequest> legs) {
+    }
+
+    record SettlementLegRequest(@NotNull Long creditAccountId, Money amount, @NotNull EntryType entryType,
+                                @Size(max = 140) String narrative) {
     }
 
     record PostingLineRequest(@NotNull Long accountId, @NotNull Direction direction, @NotNull Money amount) {

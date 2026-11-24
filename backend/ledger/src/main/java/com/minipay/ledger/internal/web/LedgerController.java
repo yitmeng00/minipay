@@ -13,6 +13,7 @@ import com.minipay.ledger.api.ReservationView;
 import com.minipay.ledger.api.ReserveFundsCommand;
 import com.minipay.ledger.api.ReverseEntryCommand;
 import com.minipay.ledger.api.SettleReservationCommand;
+import com.minipay.ledger.api.SettlementLeg;
 import com.minipay.ledger.api.StatementView;
 import com.minipay.ledger.internal.web.LedgerRequests.PostEntryRequest;
 import com.minipay.ledger.internal.web.LedgerRequests.ReleaseRequest;
@@ -106,8 +107,17 @@ class LedgerController {
     ResponseEntity<ReservationView> settle(@Parameter(required = true) @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
                                            @PathVariable UUID id,
                                            @Valid @RequestBody SettleRequest body) {
-        Idempotent<ReservationView> r = ledger.settle(new SettleReservationCommand(
-                requireKey(key), id, body.creditAccountId(), body.narrative(), body.valueDate()));
+        SettleReservationCommand command;
+        if (body.legs() != null && !body.legs().isEmpty()) {
+            command = new SettleReservationCommand(requireKey(key), id, body.legs().stream()
+                    .map(l -> new SettlementLeg(l.creditAccountId(), l.amount(), l.entryType(), l.narrative())).toList(),
+                    body.valueDate());
+        } else if (body.creditAccountId() != null) {
+            command = new SettleReservationCommand(requireKey(key), id, body.creditAccountId(), body.narrative(), body.valueDate());
+        } else {
+            throw new IllegalArgumentException("Give either creditAccountId or legs");
+        }
+        Idempotent<ReservationView> r = ledger.settle(command);
         return respond(r, URI.create("/api/ledger/reservations/" + id));
     }
 
@@ -119,6 +129,12 @@ class LedgerController {
                 requireKey(key), body.entryType(), body.paymentId(), body.valueDate(), body.narrative(),
                 body.postings().stream().map(p -> new PostingLine(p.accountId(), p.direction(), p.amount())).toList()));
         return respond(r, URI.create("/api/ledger/journal-entries/" + r.value().id()));
+    }
+
+    @GetMapping("/journal-entries")
+    @Operation(summary = "Journal entries booked for one payment (holds, bookings, fees, returns)")
+    List<JournalEntryView> entriesForPayment(@RequestParam UUID paymentId) {
+        return ledger.entriesForPayment(paymentId);
     }
 
     @GetMapping("/journal-entries/{id}")

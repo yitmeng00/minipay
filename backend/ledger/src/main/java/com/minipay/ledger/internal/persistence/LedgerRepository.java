@@ -286,6 +286,19 @@ public class LedgerRepository {
                 .list();
     }
 
+    public List<UUID> entryIdsForPayment(UUID paymentId) {
+        // Entries of one transaction share created_at; the first posting id gives true insertion order.
+        return jdbc.sql("""
+                        SELECT e.id FROM ledger.journal_entry e
+                         WHERE e.payment_id = :p
+                         ORDER BY e.created_at,
+                                  (SELECT min(p.id) FROM ledger.posting p WHERE p.journal_entry_id = e.id)
+                        """)
+                .param("p", paymentId)
+                .query(UUID.class)
+                .list();
+    }
+
     public boolean isReversed(UUID entryId) {
         return jdbc.sql("SELECT EXISTS (SELECT 1 FROM ledger.journal_entry WHERE reverses_entry_id = :id)")
                 .param("id", entryId)

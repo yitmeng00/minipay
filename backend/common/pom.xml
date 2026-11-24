@@ -13,6 +13,12 @@
     <description>Shared value types: Money, currencies, UETR, BIC. No Spring, no persistence.</description>
 
     <dependencies>
+        <!-- Only for the optional MoneyJacksonModule; Spring Boot apps already have Jackson. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

@@ -470,9 +470,9 @@ public class LedgerService implements LedgerApi {
     /**
      * The idempotency wrapper. Runs {@code work} in a transaction unless the key was used before.
      *
-     * <p>Race: two requests with the same new key arrive together. Both see "not used", both do the work;
-     * the second one's INSERT of the journal entry blocks on the first's unique key and fails once the
-     * first commits. We then retry once — now the key exists — and return the stored result.
+     * <p>Race: two requests with the same new key arrive together. An advisory lock on the key makes the
+     * second wait for the first to commit; it then finds the key and replays. The unique constraint on
+     * {@code idempotency_key} remains as a backstop: if it ever fires, we retry once and replay.
      */
     private <T> Idempotent<T> idempotent(String key, String hash, Function<UUID, T> replay, Supplier<T> work) {
         if (key == null || !IDEMPOTENCY_KEY.matcher(key).matches()) {
@@ -481,6 +481,7 @@ public class LedgerService implements LedgerApi {
         for (int attempt = 0; ; attempt++) {
             try {
                 return tx.execute(s -> {
+                    repo.lockIdempotencyKey(key);
                     Optional<StoredKey> existing = repo.findByIdempotencyKey(key);
                     if (existing.isPresent()) {
                         if (!existing.get().requestHash().equals(hash)) {

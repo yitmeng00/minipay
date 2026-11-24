@@ -208,6 +208,18 @@ public class LedgerRepository {
     public record StoredKey(UUID entryId, String requestHash, EntryType entryType) {
     }
 
+    /**
+     * Serialises requests that carry the same idempotency key, for the rest of the transaction.
+     *
+     * <p>Without it, two identical requests can both see "key not used yet"; the second then fails on
+     * business state the first one changed (e.g. "hold already settled") instead of replaying the
+     * first one's result. A transaction-scoped advisory lock on the key's hash makes the second request
+     * wait until the first commits — then it finds the key and replays.
+     */
+    public void lockIdempotencyKey(String key) {
+        jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))").param("k", key).query().singleRow();
+    }
+
     public Optional<StoredKey> findByIdempotencyKey(String key) {
         return jdbc.sql("SELECT id, request_hash, entry_type FROM ledger.journal_entry WHERE idempotency_key = :k")
                 .param("k", key)

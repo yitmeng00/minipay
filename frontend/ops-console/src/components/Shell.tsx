@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useBankInfo } from '../lib/api'
 import { BANKS, useBank } from '../lib/banks'
 import { useTheme } from '../lib/theme'
@@ -14,8 +14,8 @@ const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Monitor',
     items: [
-      { label: 'Overview', icon: Icons.overview, milestone: 'M2' },
-      { label: 'Payments', icon: Icons.payments, milestone: 'M2' },
+      { label: 'Overview', icon: Icons.overview, milestone: 'M3' },
+      { label: 'Payments', icon: Icons.payments, to: '/payments' },
       { label: 'Sanctions queue', icon: Icons.sanctions, milestone: 'M6' },
       { label: 'Settlement', icon: Icons.settlement, milestone: 'M7' },
       { label: 'Reconciliation', icon: Icons.recon, milestone: 'M8' },
@@ -24,7 +24,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Operate',
     items: [
-      { label: 'Create payment', icon: Icons.create, milestone: 'M2' },
+      { label: 'Create payment', icon: Icons.create, to: '/payments/new' },
       { label: 'Accounts & ledger', icon: Icons.ledger, to: '/accounts' },
       { label: 'Reference data', icon: Icons.refdata, milestone: 'M3' },
     ],
@@ -32,6 +32,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
 ]
 
 function Sidebar() {
+  const { pathname } = useLocation()
   return (
     <aside className="flex max-w-full flex-[1_1_232px] flex-col gap-1 border-r border-line bg-surface px-3 py-4 box-border">
       <div className="flex items-center gap-2.5 px-2.5 pt-1 pb-3">
@@ -54,9 +55,13 @@ function Sidebar() {
                 <NavLink
                   key={item.label}
                   to={item.to}
+                  // "Payments" covers the list and every payment detail, but not "Create payment".
+                  end={item.to === '/payments/new'}
                   className={({ isActive }) =>
                     `flex items-center gap-2.5 rounded-md px-2.5 py-[7px] font-medium no-underline ${
-                      isActive ? 'bg-accent-bg text-accent' : 'text-muted hover:bg-surface2 hover:text-fg'
+                      isActive && !(item.to === '/payments' && pathname === '/payments/new')
+                        ? 'bg-accent-bg text-accent'
+                        : 'text-muted hover:bg-surface2 hover:text-fg'
                     }`
                   }
                 >

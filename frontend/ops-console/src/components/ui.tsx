@@ -84,3 +84,38 @@ export function Segmented<T extends string>({
     </div>
   )
 }
+
+/** Tab strip (design: `.tab` with a count pill). */
+export function Tabs<T extends string>({
+  label,
+  tabs,
+  value,
+  onChange,
+  className = '',
+}: {
+  label: string
+  tabs: { id: T; label: string; count?: number | string; disabled?: boolean; title?: string }[]
+  value: T
+  onChange: (id: T) => void
+  className?: string
+}) {
+  return (
+    <div role="tablist" aria-label={label} className={`flex gap-0.5 border-b border-line ${className}`}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={t.id === value}
+          disabled={t.disabled}
+          title={t.title}
+          className={`tab ${t.id === value ? 'on' : ''}`}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+          {t.count !== undefined && <span className="tabcount">{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}

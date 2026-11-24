@@ -84,6 +84,11 @@ Consequences:
   - sharding the control account into N sub-accounts;
   - aggregating asynchronously.
 - **Partial settlement of a hold is not supported.** A different amount means release the hold and post a new entry.
+- **Split settlement (added in M2).** One hold can settle into several *legs*, as long as the legs
+  add up to exactly the held amount. A payment's hold covers "amount + our fee"; at settlement it
+  becomes a SETTLE entry (principal to the nostro/vostro) and a FEE entry (to fee income), released
+  and booked in one transaction. The first leg's entry is the reservation's `settle_entry_id`; the
+  others get keys `{key}/2`, `{key}/3`.
 
 ### 5. Concurrency: pessimistic row locks in a global order
 
@@ -127,7 +132,13 @@ When a hold is settled, the held account is exempt: its funds were guaranteed by
 
 - `journal_entry.idempotency_key` is UNIQUE, and `request_hash` stores the SHA-256 of the *parsed* request. So `"10"` and `"10.00"`, or different JSON key order, count as the same request.
 - The same key with the same hash replays the stored result. The same key with a different hash is refused (`IDEMPOTENCY_KEY_REUSED`, HTTP 422).
-- **Race.** Two requests may arrive with the same new key at the same moment. The second one's INSERT waits on the first one's unique key and fails once the first commits. The service then retries once, finds the key and replays.
+- **Race (amended in M2).** Two requests may arrive with the same new key at the same moment. Each
+  transaction first takes `pg_advisory_xact_lock(hashtextextended(key, 0))`, so the second request
+  waits until the first commits, then finds the key and replays.
+  - Before this lock, the second request could fail on business state the first had just changed
+    (for example "hold already SETTLED") instead of replaying. The payment hub's racing-workers test
+    found this.
+  - The unique constraint stays as a backstop: on a violation, the service retries once and replays.
 - A settle writes two entries. The RELEASE entry uses the derived key `"{key}/release"`, which is why client keys may not contain `/`.
 
 ### 8. Storage details

@@ -1,0 +1,24 @@
+# Bank C — London. Beneficiary bank for GBP: holds Bank A's GBP vostro.
+server:
+  port: 8083
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5435/bank_c
+
+minipay:
+  bank:
+    name: Bank C
+    bic: MNPCGB2LXXX
+    city: London
+    role: Beneficiary bank
+    time-zone: Europe/London
+  seed:
+    enabled: true
+    accounts:
+      - { number: 1001-GBP-RTGS, type: NOSTRO, currency: GBP, owner: "Central bank RTGS settlement account (GBP)", counterparty-bic: MNCBGB2LXXX }
+      # Mirror of Bank A's 1102-GBP-MNPC nostro.
+      - { number: GB86MNPC40051288334410, type: VOSTRO, currency: GBP, owner: "Vostro - Bank A (GBP)", counterparty-bic: MNPAMYKLXXX, opening-balance: 542512.40, funded-from: 1001-GBP-RTGS }
+      - { number: GB67MNPC40051271520093, type: CUSTOMER, currency: GBP, owner: "Harlow & Finch Engineering Ltd", opening-balance: 2310880.40, funded-from: 1001-GBP-RTGS }
+      - { number: GB70MNPC40051261047725, type: CUSTOMER, currency: GBP, owner: "Pennine Textiles Ltd",           opening-balance: 388120.75,  funded-from: 1001-GBP-RTGS }
+      - { number: 4021-FEE-GBP, type: FEE_INCOME, currency: GBP, owner: "Fee income - GBP" }

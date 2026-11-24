@@ -1,0 +1,38 @@
+# Shared settings for every bank instance. Bank-specific settings live in application-bank-{a,b,c}.yml.
+spring:
+  application:
+    name: minipay-bank
+  # Each module runs its own Flyway on its own schema (see LedgerConfiguration).
+  flyway:
+    enabled: false
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    default-property-inclusion: always
+  datasource:
+    username: minipay
+    password: minipay
+    hikari:
+      maximum-pool-size: 20
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+minipay:
+  bank:
+    time-zone: UTC
+  seed:
+    enabled: false

@@ -21,6 +21,42 @@
             <groupId>com.minipay</groupId>
             <artifactId>ledger</artifactId>
         </dependency>
+        <!-- Placeholder modules (empty until their milestone) are assembled here too. -->
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>payment-hub</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>messaging</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>refdata</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>compliance</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>settlement</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>recon</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>network-simulator</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

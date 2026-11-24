@@ -21,6 +21,11 @@ class MoneyJsonTest {
     }
 
     @Test
+    void writes_any_big_decimal_as_plain_string() throws Exception {
+        assertThat(mapper.writeValueAsString(new java.math.BigDecimal("1E+3"))).isEqualTo("\"1000\"");
+    }
+
+    @Test
     void reads_string_or_exact_number() throws Exception {
         assertThat(mapper.readValue("{\"amount\":\"0.30\",\"currency\":\"EUR\"}", Money.class))
                 .isEqualTo(Money.of("0.30", "EUR"));

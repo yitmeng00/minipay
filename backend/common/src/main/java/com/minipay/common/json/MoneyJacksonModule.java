@@ -19,6 +19,9 @@ import java.math.BigDecimal;
  * JavaScript and many other clients, which silently corrupts large or precise amounts
  * ({@code 9007199254740993} or {@code 0.1 + 0.2}). On input we accept a string or a number, but read
  * the number as an exact decimal — never through a double.
+ *
+ * <p>For the same reason every other {@link BigDecimal} in an API response (e.g. totals in the
+ * integrity report) is written as a plain string such as {@code "2947903.1700"}.
  */
 public class MoneyJacksonModule extends SimpleModule {
 
@@ -31,6 +34,12 @@ public class MoneyJacksonModule extends SimpleModule {
                 gen.writeStringField("amount", value.amount().toPlainString());
                 gen.writeStringField("currency", value.currencyCode());
                 gen.writeEndObject();
+            }
+        });
+        addSerializer(BigDecimal.class, new JsonSerializer<>() {
+            @Override
+            public void serialize(BigDecimal value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+                gen.writeString(value.toPlainString());
             }
         });
         addDeserializer(Money.class, new JsonDeserializer<>() {

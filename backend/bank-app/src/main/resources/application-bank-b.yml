@@ -27,3 +27,7 @@ minipay:
       - { number: DE13500100600412280017, type: CUSTOMER, currency: EUR, owner: "Kessler Maschinenbau GmbH", opening-balance: 4812330.00, funded-from: 1001-EUR-T2 }
       - { number: DE34500100600533190042, type: CUSTOMER, currency: EUR, owner: "Rheinwerk Logistik GmbH",   opening-balance: 1207450.25, funded-from: 1001-EUR-T2 }
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - correspondent charges EUR" }
+    # Bank B's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
+    routing-rules:
+      - { id: R-001, destination: "MNPAMYKL*", currency: EUR, method: DIRECT, settlement-account: DE87500100600778812003, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-002, destination: "*",         currency: EUR, method: RTGS,   settlement-account: 1001-EUR-T2,            priority: 50, from: "2024-01-01", release: v2024.01.1 }

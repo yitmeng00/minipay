@@ -42,3 +42,23 @@ minipay:
       # --- P&L
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - outward transfers EUR" }
       - { number: 4021-FEE-GBP, type: FEE_INCOME, currency: GBP, owner: "Fee income - outward transfers GBP" }
+    # Bank A's routing table (ADR-004). Destination = institution (BIC8 + "*") or "*" for any; the
+    # lowest priority valid on the value date wins. Rules are never edited: a change is a new rule
+    # and the old one is end-dated, as R-010 → R-003 and R-005 → R-006 show.
+    routing-rules:
+      - { id: R-001, destination: "MNPBDEFF*", currency: EUR, method: DIRECT, settlement-account: 1101-EUR-MNPB, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-002, destination: "MNPCGB2L*", currency: GBP, method: DIRECT, settlement-account: 1102-GBP-MNPC, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-003, destination: "MNPCGB2L*", currency: EUR, method: SERIAL, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 20, from: "2025-06-01", release: v2025.05.2 }
+      - { id: R-004, destination: "MNPDBEBB*", currency: EUR, method: SERIAL, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 20, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-005, destination: "MNPEFRPP*", currency: EUR, method: SERIAL, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 20, from: "2024-01-01", to: "2026-11-30", release: v2024.01.1 }
+      - { id: R-006, destination: "MNPEFRPP*", currency: EUR, method: COVER,  next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 20, from: "2026-12-01", release: v2026.11.3 }
+      # MYR to banks that hold a vostro with us: credit the vostro, on our own books.
+      - { id: R-007, destination: "MNPBDEFF*", currency: MYR, method: DIRECT, settlement-account: 2201-MYR-MNPB, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-008, destination: "MNPCGB2L*", currency: MYR, method: DIRECT, settlement-account: 2202-MYR-MNPC, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      # Any other MYR payment goes through RENTAS, settled on our central bank account.
+      - { id: R-009, destination: "*",         currency: MYR, method: RTGS,   settlement-account: 1001-MYR-RENTAS, priority: 50, from: "2024-01-01", release: v2024.01.1 }
+      # History: until May 2025 Bank C was paid in EUR on an EUR account we held with them (since closed).
+      - { id: R-010, destination: "MNPCGB2L*", currency: EUR, method: DIRECT, settlement-account: 1103-EUR-MNPC, priority: 20, from: "2024-01-01", to: "2025-05-31", release: v2024.01.1 }
+      # Catch-alls: anyone else, through our correspondent for the currency.
+      - { id: R-011, destination: "*",         currency: EUR, method: SERIAL, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 99, from: "2024-01-01", release: v2024.01.1 }
+      - { id: R-012, destination: "*",         currency: GBP, method: SERIAL, next-hop: MNPCGB2LXXX, settlement-account: 1102-GBP-MNPC, priority: 99, from: "2024-01-01", release: v2024.01.1 }

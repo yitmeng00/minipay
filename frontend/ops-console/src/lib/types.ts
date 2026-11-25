@@ -285,3 +285,38 @@ export type Scheme = {
   validTo: string | null
   releaseVersion: string
 }
+
+// ---- Messaging (com.minipay.messaging.api)
+
+export type MessageType = 'PACS_008' | 'PACS_002' | 'PACS_004' | 'CAMT_053' | 'MT103'
+
+export type MessageView = {
+  id: string
+  direction: 'OUTBOUND' | 'INBOUND'
+  type: MessageType | null
+  msgId: string | null
+  senderBic: string | null
+  receiverBic: string | null
+  uetr: string | null
+  endToEndId: string | null
+  instructionId: string | null
+  originalMsgId: string | null
+  account: string | null
+  amount: Money | null
+  settlementDate: string | null
+  status: string | null
+  reasonCode: string | null
+  errors: string[]
+  sha256: string
+  createdAt: string
+}
+
+export type MessageDetail = { message: MessageView; raw: string }
+
+export type Fidelity = 'EQUIVALENT' | 'TRANSFORMED' | 'TRUNCATED' | 'IMPLICIT' | 'LOST'
+
+export type FieldMapping = { mtTag: string; mtValue: string; mxPath: string; mxValue: string; fidelity: Fidelity; note: string | null }
+
+export type Translation = { from: MessageType; to: MessageType; target: string; fields: FieldMapping[] }
+
+export type PaymentPreview = { xml: string; notes: string[] }

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Code } from '../components/Code'
 import { Button, Card, CardHeader, Chip, Segmented } from '../components/ui'
 import {
   ApiError,
@@ -9,6 +10,7 @@ import {
   useBicDirectory,
   useCreatePayment,
   useIbanCheck,
+  usePaymentPreview,
   useRoute,
   useValueDate,
 } from '../lib/api'
@@ -114,6 +116,24 @@ export function CreatePaymentPage() {
   const iban = useIbanCheck(looksIban ? f?.creditorAccount ?? '' : '', asOf || undefined).data
   const dating = useValueDate(debtor?.currency, asOf || undefined)
   const route = useRoute(bic11, debtor?.currency ?? '', dating.data?.valueDate).data
+
+  // The pacs.008 the server would build. Deferred so typing does not fire a request per keystroke.
+  const previewBody = useDeferredValue(
+    f && debtor && /^\d+(\.\d{1,2})?$/.test(f.amount) && !/^0+(\.0+)?$/.test(f.amount) && f.creditorName.trim() && f.creditorAccount.trim()
+      ? {
+          debtorAccount: f.debtorAccount,
+          creditorName: f.creditorName,
+          creditorAccount: f.creditorAccount,
+          creditorAgentBic: f.creditorAgentBic.toUpperCase(),
+          amount: { amount: f.amount, currency: debtor.currency },
+          chargeBearer: f.chargeBearer,
+          requestedExecutionDate: f.valueDate || undefined,
+          endToEndId: f.endToEndId || undefined,
+          remittanceInformation: f.remittance || undefined,
+        }
+      : null,
+  )
+  const preview = usePaymentPreview(previewBody)
 
   const checks = useMemo(() => {
     if (!f) return []
@@ -454,12 +474,29 @@ export function CreatePaymentPage() {
               <span className="mono text-muted">RECEIVED → VALIDATED → SCREENED → FUNDS_RESERVED → SENT</span>
             </div>
           </Card>
-          <Card className="px-4 py-3.5 text-xs text-muted">
-            <span className="lbl">pacs.008.001.08 preview</span>
-            <p className="mt-1.5 mb-0">
-              The ISO 20022 message preview arrives with messaging (M4). Until then the payment hub publishes a{' '}
-              <span className="mono">payment.status-changed</span> event to Kafka for every step.
-            </p>
+          <Card className="flex min-w-0 flex-col">
+            <CardHeader>
+              <div>
+                <h2 className="m-0 text-[13px] font-semibold">pacs.008.001.08 preview</h2>
+                <span className="text-xs text-muted">Built by the server from the form, as it would be sent now · nothing is stored</span>
+              </div>
+              <Chip tone={overall.tone}>{overall.label}</Chip>
+            </CardHeader>
+            {preview.data ? (
+              <>
+                <Code text={preview.data.xml} className="max-h-[560px]" />
+                {preview.data.notes.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-line2 px-4 py-2.5 text-xs">
+                    <span className="lbl">Route</span>
+                    <span className="text-muted">{preview.data.notes.join(' · ')}</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-4 text-xs text-muted">
+                {preview.error ? (preview.error as ApiError).message : 'Fill in the form to see the message.'}
+              </div>
+            )}
           </Card>
           {result && (
             <Card className="px-4 py-3.5 text-xs">

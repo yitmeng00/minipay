@@ -124,7 +124,9 @@ export type Payment = {
   instructedAgentBic: string | null
   remittanceInformation: string | null
   requestedExecutionDate: string
+  executionDate: string
   valueDate: string | null
+  routingRuleId: string | null
   rejectionReason: string | null
   rejectionDetail: string | null
   reservationId: string | null
@@ -164,4 +166,122 @@ export type JournalEntry = {
   narrative: string | null
   createdAt: string
   postings: Posting[]
+}
+
+// ---- Payment hub overview (DailyOverview)
+
+export type DailyOverview = {
+  date: string
+  timeZone: string
+  total: number
+  byStatus: Record<PaymentStatus, number>
+  perHour: number[]
+  valueSent: Money[]
+  stuckInSent: number
+  stuckAfterMinutes: number
+  rejectedByReason: { reasonCode: string; count: number }[]
+  queued: { currency: string; count: number; amount: Money }[]
+  warehoused: number
+}
+
+// ---- Reference data (com.minipay.refdata.api). All effective-dated: validTo/effectiveTo are inclusive.
+
+export type Connectivity = 'CONNECTED' | 'PENDING_RMA' | 'NOT_CONNECTED'
+
+export type BicEntry = {
+  bic: string
+  institutionName: string
+  countryCode: string
+  city: string
+  connectivity: Connectivity
+  currencies: string[]
+  validFrom: string
+  validTo: string | null
+  releaseVersion: string
+}
+
+export type IbanCheck = {
+  input: string
+  electronic: string
+  printFormat: string
+  valid: boolean
+  countryCode: string
+  parts: { name: string; role: string; value: string }[]
+  checks: { name: string; outcome: 'PASS' | 'WARN' | 'FAIL'; detail: string }[]
+  bankId: string | null
+  bic: string | null
+}
+
+export type RoutingMethod = 'DIRECT' | 'SERIAL' | 'COVER' | 'RTGS'
+
+export type RoutingRule = {
+  ruleId: string
+  destination: string
+  currency: string
+  method: RoutingMethod
+  nextHopBic: string | null
+  settlementAccount: string
+  priority: number
+  effectiveFrom: string
+  effectiveTo: string | null
+  releaseVersion: string
+}
+
+export type RouteResolution = {
+  creditorAgentBic: string
+  currency: string
+  valueDate: string
+  route: { rule: RoutingRule; instructedAgentBic: string } | null
+  problem: string | null
+  considered: { rule: RoutingRule; note: string }[]
+}
+
+export type Release = {
+  version: string
+  publishedAt: string
+  publishedBy: string
+  approvedBy: string
+  description: string
+  routingRulesChanged: number
+}
+
+export type RefDataSummary = {
+  dataVersion: string | null
+  currentRelease: Release | null
+  date: string
+  institutions: number
+  routingRules: number
+}
+
+export type Cutoff = {
+  currency: string
+  schemeName: string
+  timeZone: string
+  cutoffTime: string
+  settlementDate: string
+  cutoff: string
+  openToday: boolean
+  holidayToday: string | null
+}
+
+export type ValueDating = {
+  currency: string
+  schemeName: string
+  earliest: string
+  valueDate: string
+  cutoff: string
+  reasons: string[]
+}
+
+export type Holiday = { calendarCode: string; date: string; name: string; releaseVersion: string }
+
+export type Scheme = {
+  currency: string
+  schemeName: string
+  calendarCode: string
+  timeZone: string
+  cutoffTime: string
+  validFrom: string
+  validTo: string | null
+  releaseVersion: string
 }

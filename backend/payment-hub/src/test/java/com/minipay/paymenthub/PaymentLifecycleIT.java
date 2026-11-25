@@ -10,6 +10,7 @@ import com.minipay.ledger.api.EntryType;
 import com.minipay.ledger.api.JournalEntryView;
 import com.minipay.ledger.api.ReservationStatus;
 import com.minipay.paymenthub.api.CreatePaymentCommand;
+import com.minipay.paymenthub.api.DailyOverview;
 import com.minipay.paymenthub.api.NetworkEvent;
 import com.minipay.paymenthub.api.PaymentError;
 import com.minipay.paymenthub.api.PaymentException;
@@ -271,6 +272,33 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
                 PaymentStatus.RECEIVED, PaymentStatus.VALIDATED, PaymentStatus.SCREENED, PaymentStatus.REJECTED);
         assertThat(reload(debtor).reserved()).isEqualTo(eur("0.00"));
         assertThat(reload(debtor).available()).isEqualTo(eur("100.00"));
+    }
+
+    @Test
+    void the_daily_overview_counts_the_banks_day_by_status_hour_and_currency() {
+        DailyOverview before = hub.overview(TODAY);
+        AccountView debtor = customer("EUR", "1000.00");
+        hub.create(payment(debtor, "100.00", ChargeBearer.SHAR));                                  // SENT
+        hub.create(payment(debtor, "5000.00", ChargeBearer.SHAR));                                 // REJECTED AM04
+        hub.create(withDate(payment(debtor, "100.00", ChargeBearer.SHAR), TODAY.plusDays(2)));   // warehoused
+
+        DailyOverview after = hub.overview(TODAY);
+        assertThat(after.timeZone()).isEqualTo("Asia/Kuala_Lumpur");
+        assertThat(after.total() - before.total()).isEqualTo(3);
+        assertThat(after.byStatus().get(PaymentStatus.SENT) - before.byStatus().get(PaymentStatus.SENT)).isEqualTo(1);
+        assertThat(after.byStatus().get(PaymentStatus.REJECTED) - before.byStatus().get(PaymentStatus.REJECTED)).isEqualTo(1);
+        assertThat(after.warehoused() - before.warehoused()).isEqualTo(1);
+        // 02:00 UTC is the 10:00 hour in Kuala Lumpur.
+        assertThat(after.perHour().get(10) - before.perHour().get(10)).isEqualTo(3);
+        assertThat(sentIn(after, "EUR").minus(sentIn(before, "EUR"))).isEqualTo(eur("100.00"));
+        assertThat(after.rejectedByReason()).extracting(DailyOverview.ReasonCount::reasonCode).contains("AM04");
+        // The same instants are a different day in UTC terms: nothing of today's is counted on the 23rd.
+        assertThat(hub.overview(TODAY.minusDays(1)).perHour().get(10)).isZero();
+    }
+
+    private static Money sentIn(DailyOverview o, String ccy) {
+        return o.valueSent().stream().filter(m -> m.currency().getCurrencyCode().equals(ccy)).findFirst()
+                .orElse(Money.zero(ccy));
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.minipay.paymenthub.api;
 
+import java.time.LocalDate;
 import java.util.Map;
 
 /**
@@ -20,6 +21,9 @@ public interface PaymentHubApi {
     PageView<PaymentView> search(PaymentQuery query);
 
     Map<PaymentStatus, Long> countByStatus();
+
+    /** The dashboard figures for one business date (bank time zone). */
+    DailyOverview overview(LocalDate date);
 
     /** Applies a network outcome (ack, settlement, return). Idempotent per key. */
     Replayable<PaymentView> onNetworkEvent(String idempotencyKey, String uetr, NetworkEvent event);

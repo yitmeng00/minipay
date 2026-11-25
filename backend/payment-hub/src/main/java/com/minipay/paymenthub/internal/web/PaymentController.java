@@ -1,6 +1,7 @@
 package com.minipay.paymenthub.internal.web;
 
 import com.minipay.paymenthub.api.CreatePaymentCommand;
+import com.minipay.paymenthub.api.DailyOverview;
 import com.minipay.paymenthub.api.NetworkEvent;
 import com.minipay.paymenthub.api.PageView;
 import com.minipay.paymenthub.api.PaymentDetailView;
@@ -76,6 +77,12 @@ class PaymentController {
     @GetMapping("/status-counts")
     Map<PaymentStatus, Long> statusCounts() {
         return hub.countByStatus();
+    }
+
+    @GetMapping("/overview")
+    @Operation(summary = "Dashboard figures for one business date (default today, bank time zone)")
+    DailyOverview overview(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return hub.overview(date);
     }
 
     @GetMapping("/{uetr}")

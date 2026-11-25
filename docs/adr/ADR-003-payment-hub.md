@@ -3,7 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-11-24
 - **Milestone:** M2
-- **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates
+- **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates;
+  ADR-005 (M4): the pacs.008 is issued when sending, and network outcomes arrive as pacs.002 / pacs.004
 
 ## Context
 
@@ -208,7 +209,7 @@ Flyway's schema. The relay's `FOR UPDATE SKIP LOCKED` query is plain SQL. The le
 for its explicit lock ordering (ADR-002 §8). One project with two styles is intentional: each one
 matches its module's concurrency profile.
 
-### 11. Network outcomes before the network exists
+### 11. Network outcomes before the network exists — *messages since M4, ADR-005 §5*
 
 `POST /api/payments/{uetr}/network-events` (ACCEPTED, SETTLED, RETURNED) stands in for pacs.002,
 settlement confirmation and pacs.004 until the network simulator (M5). The actor in the history is

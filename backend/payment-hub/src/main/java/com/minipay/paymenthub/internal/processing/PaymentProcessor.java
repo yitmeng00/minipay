@@ -6,6 +6,7 @@ import com.minipay.ledger.api.AccountStatus;
 import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.AccountView;
 import com.minipay.ledger.api.EntryType;
+import com.minipay.ledger.api.JournalEntryView;
 import com.minipay.ledger.api.LedgerApi;
 import com.minipay.ledger.api.LedgerException;
 import com.minipay.ledger.api.ReleaseReservationCommand;
@@ -18,6 +19,10 @@ import com.minipay.paymenthub.internal.config.PaymentHubProperties;
 import com.minipay.paymenthub.internal.domain.Payment;
 import com.minipay.paymenthub.internal.persistence.PaymentRepository;
 import com.minipay.paymenthub.internal.processing.PaymentTransitions.Change;
+import com.minipay.refdata.api.RefDataApi;
+import com.minipay.refdata.api.RefDataException;
+import com.minipay.refdata.api.RoutingMethod;
+import com.minipay.refdata.api.ValueDating;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -61,12 +66,13 @@ public class PaymentProcessor {
     private final ScreeningPort screening;
     private final Router router;
     private final LedgerApi ledger;
+    private final RefDataApi refdata;
     private final PaymentHubProperties props;
     private final Clock clock;
     private final ZoneId bankZone;
 
     public PaymentProcessor(PaymentRepository payments, PaymentTransitions transitions, PaymentValidator validator,
-                            ScreeningPort screening, Router router, LedgerApi ledger, PaymentHubProperties props,
+                            ScreeningPort screening, Router router, LedgerApi ledger, RefDataApi refdata, PaymentHubProperties props,
                             ObjectProvider<Clock> clock, @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone) {
         this.payments = payments;
         this.transitions = transitions;
@@ -74,6 +80,7 @@ public class PaymentProcessor {
         this.screening = screening;
         this.router = router;
         this.ledger = ledger;
+        this.refdata = refdata;
         this.props = props;
         this.clock = clock.getIfAvailable(Clock::systemUTC);
         this.bankZone = bankZone;
@@ -103,16 +110,16 @@ public class PaymentProcessor {
     // ------------------------------------------------------------------ steps
 
     private boolean validate(Payment p) {
-        Optional<Rejection> rejection = validator.validate(p, businessDate());
+        PaymentValidator.Validation v = validator.validate(p, businessDate());
         String debtorName = ledger.findAccountByNumber(p.debtorAccount()).map(AccountView::ownerName).orElse(p.debtorName());
         return transitions.transition(p.id(), PaymentStatus.RECEIVED, payment -> {
             payment.debtorName(debtorName);
-            if (rejection.isPresent()) {
-                payment.reject(rejection.get().reasonCode(), rejection.get().detail());
-                return new Change(PaymentStatus.REJECTED, rejection.get().reasonCode(), rejection.get().detail(), "svc/validator");
+            if (v.rejection().isPresent()) {
+                payment.reject(v.rejection().get().reasonCode(), v.rejection().get().detail());
+                return new Change(PaymentStatus.REJECTED, v.rejection().get().reasonCode(), v.rejection().get().detail(), "svc/validator");
             }
-            return new Change(PaymentStatus.VALIDATED, null,
-                    "Debtor account, currency, creditor agent BIC format, creditor account format, execution date", "svc/validator");
+            payment.executeOn(v.executionDate());
+            return new Change(PaymentStatus.VALIDATED, null, v.detail(), "svc/validator");
         });
     }
 
@@ -150,20 +157,52 @@ public class PaymentProcessor {
     }
 
     /**
-     * Books the payment and hands it to the network. A payment whose requested execution date is in
-     * the future stays FUNDS_RESERVED ("warehoused") until that business date.
+     * Books the payment and hands it to the network.
+     *
+     * <ol>
+     *   <li><b>Warehousing:</b> a payment whose execution date is after today's business date stays
+     *       FUNDS_RESERVED until that date.</li>
+     *   <li><b>Value date:</b> the first business day of the currency on or after the execution date
+     *       whose cut-off has not passed. A payment that missed today's cut-off settles tomorrow.</li>
+     *   <li><b>Route:</b> the routing rule valid on the value date, which can differ from the rule that
+     *       was valid when the payment was validated.</li>
+     * </ol>
+     *
+     * <p>The value date is part of the ledger request, so a re-run must use the same one. Otherwise
+     * a crash just before a cut-off would make the retry ask for a different value date under the
+     * same idempotency key, and the ledger would refuse it instead of replaying. So if the ledger
+     * already holds our SETTLE entry, its value date is the decision and is reused.
      */
     private boolean send(Payment p) {
         LocalDate today = businessDate();
-        if (p.requestedExecDate().isAfter(today)) {
+        if (p.executionDate().isAfter(today)) {
             return false;
         }
-        Optional<Router.Route> route = router.route(p.creditorAgentBic(), p.currency());
-        if (route.isEmpty()) {
-            return releaseAndReject(p, "CNOR", "No route: we hold no " + p.currency()
-                    + " account with or through a correspondent for " + p.creditorAgentBic());
+        Optional<LocalDate> alreadyBooked = ledger.entriesForPayment(p.id()).stream()
+                .filter(e -> e.entryType() == EntryType.SETTLE && e.reversesEntryId() == null)
+                .map(JournalEntryView::valueDate).findFirst();
+        LocalDate valueDate;
+        String rolled = "";
+        if (alreadyBooked.isPresent()) {
+            valueDate = alreadyBooked.get();
+        } else {
+            ValueDating dating;
+            try {
+                dating = refdata.valueDate(p.currency(), p.executionDate(), clock.instant());
+            } catch (RefDataException e) {
+                return releaseAndReject(p, "AM03", e.getMessage());
+            }
+            valueDate = dating.valueDate();
+            if (dating.rolled()) {
+                rolled = " (" + dating.reasons().get(dating.reasons().size() - 1) + ")";
+            }
         }
-        Router.Route r = route.get();
+
+        Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), valueDate);
+        if (outcome.route().isEmpty()) {
+            return releaseAndReject(p, "CNOR", "No route on value date " + valueDate + ": " + outcome.problem());
+        }
+        Router.Route r = outcome.route().get();
         Money interbank = Money.of(p.interbankSettlementAmount(), p.currency());
         Money fee = Money.of(p.chargesAmount(), p.currency());
         List<SettlementLeg> legs = new ArrayList<>();
@@ -174,17 +213,28 @@ public class PaymentProcessor {
                     "Outward transfer fee (" + p.chargeBearer() + ")"));
         }
         try {
-            ledger.settle(new SettleReservationCommand(key(p, "settle"), p.reservationId(), legs, today));
+            ledger.settle(new SettleReservationCommand(key(p, "settle"), p.reservationId(), legs, valueDate));
         } catch (LedgerException e) {
             // e.g. AM04 on our nostro: not enough liquidity at the correspondent to send it.
             return releaseAndReject(p, iso(e), e.getMessage());
         }
-        String detail = "Booked to " + r.settlementAccountNumber() + "; handed to network → " + r.nextAgentBic()
-                + " (" + r.method() + ")";
+        afterSettle.run();
+        String detail = "Value date " + valueDate + rolled + "; booked to " + r.settlementAccountNumber()
+                + "; routed by " + r.describe() + " → " + r.instructedAgentBic()
+                + (r.method() == RoutingMethod.COVER ? ", cover via " + r.nextHopBic() : "");
         return transitions.transition(p.id(), PaymentStatus.FUNDS_RESERVED, payment -> {
-            payment.routed(r.nextAgentBic(), r.settlementAccountId(), today);
+            payment.routed(r.instructedAgentBic(), r.settlementAccountId(), valueDate, r.ruleId());
             return new Change(PaymentStatus.SENT, null, detail, "svc/gateway");
         });
+    }
+
+    /** Test seam: runs right after the ledger booked the payment, before SENT is recorded. */
+    private volatile Runnable afterSettle = () -> {
+    };
+
+    void afterSettle(Runnable hook) {
+        this.afterSettle = hook == null ? () -> {
+        } : hook;
     }
 
     // ------------------------------------------------------------------ helpers

@@ -17,6 +17,7 @@ import com.minipay.paymenthub.internal.outbox.OutboxRelay;
 import com.minipay.paymenthub.internal.outbox.OutboxRelayTestAccess;
 import com.minipay.paymenthub.internal.outbox.OutboxWriter;
 import com.minipay.paymenthub.internal.processing.PaymentProcessor;
+import com.minipay.paymenthub.internal.processing.PaymentProcessorTestAccess;
 import com.minipay.paymenthub.internal.processing.RecoverySweeper;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -133,6 +134,37 @@ class CrashSafetyIT extends PaymentHubIntegrationTest {
         assertThat(hub.get(p.uetr()).history()).extracting(StateChangeView::to).containsExactly(
                 PaymentStatus.RECEIVED, PaymentStatus.VALIDATED, PaymentStatus.SCREENED,
                 PaymentStatus.FUNDS_RESERVED, PaymentStatus.SENT);
+    }
+
+    @Test
+    void a_crash_after_booking_is_replayed_with_the_same_value_date_even_after_the_cut_off() {
+        // The ledger request includes the value date. If the retry recomputed it after the cut-off,
+        // it would ask for a different booking under the same key, and the ledger would refuse.
+        AccountView debtor = customer("MYR", "5000.00");
+        PaymentProcessorTestAccess.crashAfterLedgerBooking(processor);
+        PaymentView p;
+        try {
+            p = hub.create(new com.minipay.paymenthub.api.CreatePaymentCommand(key(), debtor.accountNumber(),
+                    "Kessler Maschinenbau GmbH", "DE13500100600412280017", BANK_B,
+                    com.minipay.common.money.Money.of("250.00", "MYR"), ChargeBearer.SHAR, null, null, null)).value();
+        } finally {
+            PaymentProcessorTestAccess.noCrash(processor);
+        }
+        assertThat(p.status()).isEqualTo(PaymentStatus.FUNDS_RESERVED); // booked in the ledger, SENT not recorded
+        assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType).contains(EntryType.SETTLE);
+
+        clock.advance(Duration.ofHours(9)); // restart at 19:00 Kuala Lumpur: RENTAS closed at 18:00
+        try {
+            sweeper.resumeStuckPayments();
+        } finally {
+            clock.advance(Duration.ofHours(-9));
+        }
+
+        PaymentView sent = hub.get(p.uetr()).payment();
+        assertThat(sent.status()).isEqualTo(PaymentStatus.SENT);
+        assertThat(sent.valueDate()).isEqualTo(java.time.LocalDate.of(2026, 11, 24)); // the booked one, not tomorrow
+        assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType)
+                .containsExactly(EntryType.RESERVE, EntryType.RELEASE, EntryType.SETTLE);
     }
 
     // ------------------------------------------------------------------ outbox

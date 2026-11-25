@@ -19,6 +19,9 @@ import com.minipay.paymenthub.api.PaymentView;
 import com.minipay.paymenthub.api.Replayable;
 import com.minipay.paymenthub.api.StateChangeView;
 import com.minipay.paymenthub.internal.processing.RecoverySweeper;
+import com.minipay.refdata.api.CreateRoutingRuleCommand;
+import com.minipay.refdata.api.RoutingMethod;
+import com.minipay.refdata.api.RoutingRuleView;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Set;
@@ -122,6 +125,143 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
     }
 
     @Test
+    void reference_data_checks_reject_unknown_banks_and_bad_or_mismatched_ibans() {
+        AccountView debtor = customer("EUR", "100.00");
+        CreatePaymentCommand base = payment(debtor, "10.00", ChargeBearer.SHAR);
+
+        // Well-formed BIC, but no such institution in the directory.
+        PaymentView unknown = assertRejected(to(base, "GB96MNPC60161331926819", "MNPZDEFFXXX"), "RC01");
+        assertThat(unknown.rejectionDetail()).contains("not in the BIC directory on 2026-11-24");
+        // In the directory today, gone by the execution date: the bank must exist when we pay.
+        assertRejected(withDate(to(base, "12345678", "MNPXNL2AXXX"), LocalDate.of(2027, 1, 4)), "RC01");
+        // One digit wrong: mod-97 catches it.
+        PaymentView badIban = assertRejected(to(base, "GB97MNPC60161331926819", BANK_C), "AC03");
+        assertThat(badIban.rejectionDetail()).contains("expected check digits 96");
+        // A valid IBAN of Bank C, sent to a Belgian bank: one of the two is wrong.
+        PaymentView mismatch = assertRejected(to(base, "GB96MNPC60161331926819", "MNPDBEBBXXX"), "AC03");
+        assertThat(mismatch.rejectionDetail()).contains("belongs to MNPCGB2LXXX");
+        // Germany uses IBANs: a bare account number is not enough.
+        assertRejected(to(base, "0412280017", BANK_B), "AC03");
+    }
+
+    @Test
+    void a_payment_requested_for_a_weekend_executes_on_the_next_business_day() {
+        AccountView debtor = customer("EUR", "1000.00");
+        LocalDate saturday = LocalDate.of(2026, 11, 28);
+        PaymentView p = hub.create(withDate(payment(debtor, "100.00", ChargeBearer.SHAR), saturday)).value();
+
+        assertThat(p.status()).isEqualTo(PaymentStatus.FUNDS_RESERVED); // warehoused
+        assertThat(p.requestedExecutionDate()).isEqualTo(saturday);
+        assertThat(p.executionDate()).isEqualTo(LocalDate.of(2026, 11, 30));
+        assertThat(hub.get(p.uetr()).history().get(1).detail()).contains("2026-11-28 is not a T2 RTGS business day");
+
+        clock.advance(Duration.ofDays(4)); // Saturday: still waiting
+        try {
+            sweeper.resumeStuckPayments();
+            assertThat(hub.get(p.uetr()).payment().status()).isEqualTo(PaymentStatus.FUNDS_RESERVED);
+            clock.advance(Duration.ofDays(2)); // Monday
+            sweeper.resumeStuckPayments();
+            PaymentView sent = hub.get(p.uetr()).payment();
+            assertThat(sent.status()).isEqualTo(PaymentStatus.SENT);
+            assertThat(sent.valueDate()).isEqualTo(LocalDate.of(2026, 11, 30));
+        } finally {
+            clock.advance(Duration.ofDays(-6));
+        }
+    }
+
+    @Test
+    void after_the_cut_off_the_payment_is_sent_with_the_next_business_day_as_value_date() {
+        AccountView debtor = customer("MYR", "5000.00");
+        clock.advance(Duration.ofHours(9)); // 11:00 UTC = 19:00 Kuala Lumpur: RENTAS (18:00) has closed
+        try {
+            PaymentView p = hub.create(new CreatePaymentCommand(key(), debtor.accountNumber(), "Kessler Maschinenbau GmbH",
+                    "DE13500100600412280017", BANK_B, Money.of("250.00", "MYR"), ChargeBearer.SHAR, null, null, null)).value();
+            assertThat(p.status()).isEqualTo(PaymentStatus.SENT);
+            assertThat(p.executionDate()).isEqualTo(TODAY);
+            assertThat(p.valueDate()).isEqualTo(TODAY.plusDays(1));
+            assertThat(hub.get(p.uetr()).history().get(4).detail())
+                    .startsWith("Value date 2026-11-25 (RENTAS cut-off 18:00 Asia/Kuala_Lumpur on 2026-11-24 has passed)");
+        } finally {
+            clock.advance(Duration.ofHours(-9));
+        }
+    }
+
+    @Test
+    void a_currency_we_do_not_settle_is_rejected_AM03_before_any_hold() {
+        AccountView debtor = customer("JPY", "1000000");
+        PaymentView p = assertRejected(new CreatePaymentCommand(key(), debtor.accountNumber(), "Tokyo Precision KK",
+                "123456789", "MNPJJPJTXXX", Money.of("50000", "JPY"), ChargeBearer.SHAR, null, null, null), "AM03");
+        assertThat(p.rejectionDetail()).contains("no settlement scheme");
+        assertThat(ledger.entriesForPayment(p.id())).isEmpty();
+    }
+
+    @Test
+    void no_routing_rule_is_rejected_CNOR_at_validation_before_any_hold() {
+        AccountView debtor = customer("GBP", "1000.00");
+        // GBP to a Belgian bank: our only GBP rule is for Bank C.
+        PaymentView p = assertRejected(new CreatePaymentCommand(key(), debtor.accountNumber(), "Brouwerij De Klok NV",
+                "BE71096123456769", "MNPDBEBBXXX", Money.of("100.00", "GBP"), ChargeBearer.SHAR, null, null, null), "CNOR");
+        assertThat(p.rejectionDetail()).contains("No routing rule for MNPDBEBB in GBP");
+        assertThat(ledger.entriesForPayment(p.id())).isEmpty();
+    }
+
+    @Test
+    void a_route_that_ends_before_the_value_date_rejects_CNOR_and_releases_the_hold() {
+        // MiniPay Mutual in MYR is reachable through RENTAS, by a rule that is valid today only.
+        refdata.createRoutingRule(new CreateRoutingRuleCommand(key(), "MNPMMYKL*", "MYR", RoutingMethod.RTGS, null,
+                "T-NOSTRO-MYR-CB", 10, TODAY, TODAY, null, "r.lim", "a.wong", "One-day RTGS route"));
+        AccountView debtor = customer("MYR", "5000.00");
+        clock.advance(Duration.ofHours(9)); // after the RENTAS cut-off: the value date becomes tomorrow
+        try {
+            PaymentView p = hub.create(new CreatePaymentCommand(key(), debtor.accountNumber(), "Ipoh Agro Supplies",
+                    "8812340011", "MNPMMYKLXXX", Money.of("300.00", "MYR"), ChargeBearer.SHAR, null, null, null)).value();
+
+            assertThat(p.status()).isEqualTo(PaymentStatus.REJECTED);
+            assertThat(p.rejectionReason()).isEqualTo("CNOR");
+            assertThat(p.rejectionDetail()).startsWith("No route on value date 2026-11-25");
+            assertThat(hub.get(p.uetr()).history()).extracting(StateChangeView::from)
+                    .contains(PaymentStatus.FUNDS_RESERVED); // rejected after the hold was placed ...
+            assertThat(reload(debtor).reserved().isZero()).isTrue(); // ... and the hold was released
+            assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType)
+                    .containsExactly(EntryType.RESERVE, EntryType.RELEASE);
+        } finally {
+            clock.advance(Duration.ofHours(-9));
+        }
+    }
+
+    @Test
+    void a_warehoused_payment_is_routed_by_the_rule_valid_on_its_value_date() {
+        // Today: Paris in EUR goes serial via Bank B. From Thursday a new rule sends it by cover.
+        RoutingRuleView serial = refdata.createRoutingRule(new CreateRoutingRuleCommand(key(), "MNPEFRPP*", "EUR",
+                RoutingMethod.SERIAL, BANK_B, "T-NOSTRO-EUR-MNPB", 20, TODAY, null, null, "r.lim", "a.wong", "Paris serial")).value();
+        RoutingRuleView cover = refdata.createRoutingRule(new CreateRoutingRuleCommand(key(), "MNPEFRPP*", "EUR",
+                RoutingMethod.COVER, BANK_B, "T-NOSTRO-EUR-MNPB", 20, TODAY.plusDays(2), null, serial.ruleId(), "r.lim", "a.wong",
+                "Paris cover from Thursday")).value();
+
+        AccountView debtor = customer("EUR", "1000.00");
+        CreatePaymentCommand toParis = to(payment(debtor, "100.00", ChargeBearer.SHAR), "FR7630006000011234567890189", "MNPEFRPPXXX");
+        PaymentView today = hub.create(toParis).value();
+        PaymentView thursday = hub.create(withDate(to(payment(debtor, "100.00", ChargeBearer.SHAR),
+                "FR7630006000011234567890189", "MNPEFRPPXXX"), TODAY.plusDays(2))).value();
+
+        assertThat(today.routingRuleId()).isEqualTo(serial.ruleId());
+        assertThat(today.instructedAgentBic()).isEqualTo(BANK_B); // serial: our message goes to the correspondent
+        assertThat(thursday.status()).isEqualTo(PaymentStatus.FUNDS_RESERVED);
+
+        clock.advance(Duration.ofDays(2));
+        try {
+            sweeper.resumeStuckPayments();
+            PaymentView sent = hub.get(thursday.uetr()).payment();
+            assertThat(sent.status()).isEqualTo(PaymentStatus.SENT);
+            assertThat(sent.routingRuleId()).isEqualTo(cover.ruleId());
+            assertThat(sent.instructedAgentBic()).isEqualTo("MNPEFRPPXXX"); // cover: pacs.008 to the creditor agent
+            assertThat(hub.get(thursday.uetr()).history().get(4).detail()).contains("cover via " + BANK_B);
+        } finally {
+            clock.advance(Duration.ofDays(-2));
+        }
+    }
+
+    @Test
     void insufficient_funds_is_rejected_AM04_and_leaves_no_hold() {
         AccountView debtor = customer("EUR", "100.00");
         // 90 + 20 fee = 110 > 100
@@ -131,21 +271,6 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
                 PaymentStatus.RECEIVED, PaymentStatus.VALIDATED, PaymentStatus.SCREENED, PaymentStatus.REJECTED);
         assertThat(reload(debtor).reserved()).isEqualTo(eur("0.00"));
         assertThat(reload(debtor).available()).isEqualTo(eur("100.00"));
-    }
-
-    @Test
-    void no_route_is_rejected_CNOR_and_the_hold_is_released() {
-        AccountView debtor = customer("JPY", "1000000");
-        PaymentView p = hub.create(new CreatePaymentCommand(key(), debtor.accountNumber(), "Tokyo Precision KK",
-                "123456789", BANK_C, Money.of("50000", "JPY"), ChargeBearer.SHAR, null, null, null)).value();
-
-        assertThat(p.status()).isEqualTo(PaymentStatus.REJECTED);
-        assertThat(p.rejectionReason()).isEqualTo("CNOR");
-        assertThat(hub.get(p.uetr()).history()).extracting(StateChangeView::from)
-                .contains(PaymentStatus.FUNDS_RESERVED); // rejected after the hold was placed ...
-        assertThat(reload(debtor).reserved().isZero()).isTrue(); // ... and the hold was released
-        assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType)
-                .containsExactly(EntryType.RESERVE, EntryType.RELEASE);
     }
 
     @Test

@@ -28,7 +28,7 @@ import java.util.List;
  * <ul>
  *   <li>a Business Application Header, with valid BICs, naming the same message type and MsgId as the Document;</li>
  *   <li>one transaction per message (CBPR+ allows no batches);</li>
- *   <li>a UETR in the canonical lower-case UUIDv4 form;</li>
+ *   <li>a UETR in the canonical lower-case UUIDv4 form, and an InstrId of at most 16 characters;</li>
  *   <li>positive amounts with no more decimals than the currency has;</li>
  *   <li>status codes and return reasons that are real ISO codes in shape (RJCT and returns need a reason).</li>
  * </ul>
@@ -131,6 +131,9 @@ public final class MxReader {
             b.instructionId = tx.getPmtId().getInstrId();
         }
         checkUetr(b, "PmtId/UETR", b.uetr);
+        if (b.instructionId != null && b.instructionId.length() > 16) {
+            b.error("PmtId/InstrId must be at most 16 characters (CBPR+, so that it fits MT103 :20:)");
+        }
         if (tx.getIntrBkSttlmAmt() != null) {
             b.amount = checkAmount(b, "IntrBkSttlmAmt", tx.getIntrBkSttlmAmt().getValue(), tx.getIntrBkSttlmAmt().getCcy());
         } else {

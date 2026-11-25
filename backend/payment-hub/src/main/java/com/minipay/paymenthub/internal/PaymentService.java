@@ -1,5 +1,6 @@
 package com.minipay.paymenthub.internal;
 
+import com.minipay.common.id.Bic;
 import com.minipay.common.id.Uetr;
 import com.minipay.common.money.Money;
 import com.minipay.ledger.api.AccountView;
@@ -8,6 +9,14 @@ import com.minipay.ledger.api.EntryType;
 import com.minipay.ledger.api.LedgerApi;
 import com.minipay.ledger.api.PostEntryCommand;
 import com.minipay.ledger.api.PostingLine;
+import com.minipay.messaging.api.InboundMessage;
+import com.minipay.messaging.api.MessageDirection;
+import com.minipay.messaging.api.MessageType;
+import com.minipay.messaging.api.MessageView;
+import com.minipay.messaging.api.MessagingApi;
+import com.minipay.messaging.api.PaymentReturn;
+import com.minipay.messaging.api.StatusReport;
+import com.minipay.messaging.api.TransactionStatus;
 import com.minipay.paymenthub.api.CreatePaymentCommand;
 import com.minipay.paymenthub.api.DailyOverview;
 import com.minipay.paymenthub.api.NetworkEvent;
@@ -16,6 +25,7 @@ import com.minipay.paymenthub.api.PaymentDetailView;
 import com.minipay.paymenthub.api.PaymentError;
 import com.minipay.paymenthub.api.PaymentException;
 import com.minipay.paymenthub.api.PaymentHubApi;
+import com.minipay.paymenthub.api.PaymentPreview;
 import com.minipay.paymenthub.api.PaymentQuery;
 import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.api.PaymentView;
@@ -42,6 +52,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumMap;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -79,13 +90,15 @@ public class PaymentService implements PaymentHubApi {
     private final PaymentStatistics statistics;
     private final PaymentHubProperties props;
     private final ZoneId bankZone;
+    private final MessagingApi messaging;
 
     public PaymentService(PaymentRepository payments, PaymentStateHistoryRepository history,
                           IdempotencyRecordRepository idempotency, PaymentTransitions transitions,
                           PaymentProcessor processor, LedgerApi ledger, PlatformTransactionManager txManager,
                           ObjectProvider<Clock> clock, @Value("${minipay.bank.bic}") String bankBic,
                           PaymentStatistics statistics, PaymentHubProperties props,
-                          @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone) {
+                          @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone, MessagingApi messaging) {
+        this.messaging = messaging;
         this.statistics = statistics;
         this.props = props;
         this.bankZone = bankZone;
@@ -153,14 +166,24 @@ public class PaymentService implements PaymentHubApi {
         }
     }
 
-    /** "<BIC4><yyMMdd><8-digit sequence>", e.g. MNPA26112400000042 — unique per sending bank, ≤ 35 chars. */
+    /**
+     * "<BIC4><yyMMdd><6-digit sequence>", e.g. MNPA261124000042: unique per sending bank and day, and
+     * 16 characters. CBPR+ limits InstrId to 16 during the MT/MX coexistence period, so it still fits
+     * MT103 field :20: when a bank on the route translates the payment.
+     */
     private String instructionId() {
         return bankBic.substring(0, 4) + processor.businessDate().format(YYMMDD)
-                + String.format("%08d", payments.nextInstructionSeq());
+                + String.format("%06d", payments.nextInstructionSeq() % 1_000_000);
     }
 
     // =================================================================== network events
 
+    /**
+     * SIMULATION until the network simulator (M5): plays the next bank on the route. The outcome is
+     * written as the message that bank would send (pacs.002 or pacs.004, from the instructed agent to us)
+     * and then received through exactly the same path as a real inbound message, so it is stored raw
+     * and correlated like one.
+     */
     @Override
     public Replayable<PaymentView> onNetworkEvent(String key, String uetr, NetworkEvent event) {
         String hash = fingerprint("network-event", uetr, event.type(), event.reasonCode(), event.returnedAmount(),
@@ -170,24 +193,107 @@ public class PaymentService implements PaymentHubApi {
             return replay.get();
         }
         Payment p = find(uetr);
-        PaymentStatus target = switch (event.type()) {
+        if (p.instructedAgentBic() == null) {
+            throw new PaymentException(PaymentError.ILLEGAL_TRANSITION,
+                    "Payment " + uetr + " has not been sent (" + p.status() + "): no bank can answer it yet");
+        }
+        PaymentStatus target = targetOf(event.type());
+        PaymentStateMachine.check(p.status(), target); // fail fast, before building anything
+        MessageView ours = messaging.forUetr(p.uetr().toString()).stream()
+                .filter(m -> m.type() == MessageType.PACS_008 && m.direction() == MessageDirection.OUTBOUND)
+                .findFirst().orElse(null);
+        String originalMsgId = ours != null ? ours.msgId() : null;
+        String raw = switch (event.type()) {
+            case ACCEPTED, SETTLED -> messaging.buildPacs002(new StatusReport(p.instructedAgentBic(), bankBic, originalMsgId,
+                    p.instructionId(), p.endToEndId(), p.uetr().toString(),
+                    event.type() == NetworkEvent.Type.ACCEPTED ? TransactionStatus.ACCP : TransactionStatus.ACSC,
+                    null, event.reference()));
+            case RETURNED -> {
+                Money sent = Money.of(p.interbankSettlementAmount(), p.currency());
+                Money returned = event.returnedAmount() != null ? event.returnedAmount() : sent;
+                checkReturnedAmount(p, returned);
+                Money kept = sent.minus(returned);
+                yield messaging.buildPacs004(new PaymentReturn(p.instructedAgentBic(), bankBic,
+                        "RTN-" + p.instructionId(), originalMsgId, p.instructionId(), p.endToEndId(), p.uetr().toString(),
+                        sent, returned, processor.businessDate(),
+                        kept.isPositive() ? List.of(new PaymentReturn.Charge(kept, p.instructedAgentBic())) : List.of(),
+                        event.reasonCode(), event.reference()));
+            }
+        };
+        return receive(key, hash, raw, " (simulated)");
+    }
+
+    /** A message from another bank about a payment we sent: pacs.002 (status) or pacs.004 (return). */
+    @Override
+    public Replayable<PaymentView> receiveMessage(String key, String raw) {
+        String hash = fingerprint("inbound-message", raw);
+        return replay(key, hash).orElseGet(() -> receive(key, hash, raw, ""));
+    }
+
+    private Replayable<PaymentView> receive(String key, String hash, String raw, String note) {
+        InboundMessage in = messaging.receive(raw); // stored first, whatever happens next (rule 8)
+        MessageView m = in.message();
+        if (!in.valid()) {
+            throw new PaymentException(PaymentError.INVALID_MESSAGE,
+                    "Message stored as INVALID (" + m.id() + "): " + String.join("; ", m.errors()));
+        }
+        if (m.type() != MessageType.PACS_002 && m.type() != MessageType.PACS_004) {
+            throw new PaymentException(PaymentError.UNSUPPORTED_MESSAGE, m.type().identifier()
+                    + " stored (" + m.id() + "); the hub acts on pacs.002 and pacs.004 — inbound payments arrive with M5");
+        }
+        Payment p = find(in.originalUetr());
+        if (p.instructedAgentBic() == null
+                || !Bic.parse(m.senderBic()).bic8().equals(Bic.parse(p.instructedAgentBic()).bic8())) {
+            throw new PaymentException(PaymentError.INVALID_NETWORK_EVENT, m.type().identifier() + " from " + m.senderBic()
+                    + ", but payment " + p.uetr() + " was sent to " + p.instructedAgentBic());
+        }
+        NetworkEvent event = switch (m.type()) {
+            case PACS_004 -> new NetworkEvent(NetworkEvent.Type.RETURNED, in.reasonCode(), in.returnedAmount(), in.additionalInfo());
+            default -> switch (in.status()) {
+                case "ACCP", "ACSP" -> new NetworkEvent(NetworkEvent.Type.ACCEPTED, null, null, null);
+                case "ACSC" -> new NetworkEvent(NetworkEvent.Type.SETTLED, null, null, null);
+                default -> throw new PaymentException(PaymentError.UNSUPPORTED_MESSAGE, "pacs.002 " + in.status()
+                        + " after SENT is stored but not acted on: a rejection by the next bank is modelled in M5");
+            };
+        };
+        PaymentStatus target = targetOf(event.type());
+        // A duplicate, or a status that arrives after a later one (an ACCP after the ACSC), must not move the
+        // payment backwards. It is stored, and acknowledged, and nothing else happens.
+        if (in.duplicate() || alreadyPast(p.status(), target)) {
+            return new Replayable<>(PaymentMapper.toView(p), true);
+        }
+        String ref = m.type().identifier().substring(0, 8) + " " + m.msgId()
+                + (m.type() == MessageType.PACS_002 ? " " + in.status() : "") + note;
+        return apply(key, hash, p, event, "net/" + m.senderBic(), ref);
+    }
+
+    private static PaymentStatus targetOf(NetworkEvent.Type type) {
+        return switch (type) {
             case ACCEPTED -> PaymentStatus.ACKED;
             case SETTLED -> PaymentStatus.SETTLED;
             case RETURNED -> PaymentStatus.RETURNED;
         };
-        PaymentStateMachine.check(p.status(), target); // fail fast, before touching the ledger
-        String ref = event.reference() != null ? " · " + event.reference() : "";
+    }
 
+    /** Order of the after-SENT statuses: a report for an earlier stage changes nothing. */
+    private static boolean alreadyPast(PaymentStatus current, PaymentStatus target) {
+        List<PaymentStatus> order = List.of(PaymentStatus.SENT, PaymentStatus.ACKED, PaymentStatus.SETTLED, PaymentStatus.RETURNED);
+        int c = order.indexOf(current);
+        return c >= 0 && c >= order.indexOf(target);
+    }
+
+    private Replayable<PaymentView> apply(String key, String hash, Payment p, NetworkEvent event, String actor, String ref) {
+        PaymentStatus target = targetOf(event.type());
+        PaymentStateMachine.check(p.status(), target); // fail fast, before touching the ledger
         Supplier<Change> change = switch (event.type()) {
-            case ACCEPTED -> () -> new Change(PaymentStatus.ACKED, null,
-                    "pacs.002 ACCP from " + p.instructedAgentBic() + ref, "sim/network");
+            case ACCEPTED -> () -> new Change(PaymentStatus.ACKED, null, "Accepted by " + p.instructedAgentBic() + " · " + ref, actor);
             case SETTLED -> () -> new Change(PaymentStatus.SETTLED, null,
-                    "Settlement confirmed for " + Money.of(p.interbankSettlementAmount(), p.currency()) + ref, "sim/network");
+                    "Settlement confirmed for " + Money.of(p.interbankSettlementAmount(), p.currency()) + " · " + ref, actor);
             case RETURNED -> {
                 Money returned = bookReturn(p, event);
                 yield () -> new Change(PaymentStatus.RETURNED, event.reasonCode(),
-                        "pacs.004 return " + event.reasonCode() + " · " + returned + " credited to " + p.debtorAccount() + ref,
-                        "sim/network");
+                        "Return " + event.reasonCode() + " · " + returned + " credited to " + p.debtorAccount() + " · " + ref,
+                        actor);
             }
         };
         try {
@@ -205,12 +311,29 @@ public class PaymentService implements PaymentHubApi {
             });
             if (!done) {
                 throw new PaymentException(PaymentError.ILLEGAL_TRANSITION,
-                        "Payment " + uetr + " changed concurrently; retry the request");
+                        "Payment " + p.uetr() + " changed concurrently; retry the request");
             }
         } catch (DataIntegrityViolationException e) {
             return replay(key, hash).orElseThrow(() -> e);
         }
         return new Replayable<>(PaymentMapper.toView(payments.findById(p.id()).orElseThrow()), false);
+    }
+
+    private static void checkReturnedAmount(Payment p, Money returned) {
+        Money sent = Money.of(p.interbankSettlementAmount(), p.currency());
+        if (!returned.currencyCode().equals(p.currency()) || !returned.isPositive() || returned.isGreaterThan(sent)) {
+            throw new PaymentException(PaymentError.INVALID_NETWORK_EVENT,
+                    "Returned amount must be positive, in " + p.currency() + " and at most " + sent);
+        }
+    }
+
+    @Override
+    public PaymentPreview preview(CreatePaymentCommand c) {
+        String creditorAccount = c.creditorAccount() == null ? "" : c.creditorAccount().replace(" ", "").toUpperCase(Locale.ROOT);
+        String agent = c.creditorAgentBic() == null ? "" : c.creditorAgentBic().trim().toUpperCase(Locale.ROOT);
+        PaymentProcessor.Preview pv = processor.preview(c.debtorAccount(), null, c.creditorName(), creditorAccount, agent,
+                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation());
+        return new PaymentPreview(pv.xml(), pv.notes());
     }
 
     /**
@@ -221,10 +344,7 @@ public class PaymentService implements PaymentHubApi {
     private Money bookReturn(Payment p, NetworkEvent event) {
         Money sent = Money.of(p.interbankSettlementAmount(), p.currency());
         Money returned = event.returnedAmount() != null ? event.returnedAmount() : sent;
-        if (!returned.currencyCode().equals(p.currency()) || !returned.isPositive() || returned.isGreaterThan(sent)) {
-            throw new PaymentException(PaymentError.INVALID_NETWORK_EVENT,
-                    "Returned amount must be positive, in " + p.currency() + " and at most " + sent);
-        }
+        checkReturnedAmount(p, returned);
         AccountView debtor = ledger.findAccountByNumber(p.debtorAccount()).orElseThrow();
         ledger.post(new PostEntryCommand("pay:" + p.id() + ":return", EntryType.SETTLE, p.id(), null,
                 "Return " + event.reasonCode() + " · " + p.endToEndId(),

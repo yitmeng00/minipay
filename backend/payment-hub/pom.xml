@@ -22,6 +22,11 @@
             <groupId>com.minipay</groupId>
             <artifactId>ledger</artifactId>
         </dependency>
+        <!-- Only com.minipay.messaging.api is used (ArchUnit-enforced). -->
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>messaging</artifactId>
+        </dependency>
         <!-- Only com.minipay.refdata.api is used (ArchUnit-enforced). -->
         <dependency>
             <groupId>com.minipay</groupId>

@@ -17,7 +17,7 @@ class PaymentExceptionHandler {
         HttpStatus status = switch (e.error()) {
             case PAYMENT_NOT_FOUND -> HttpStatus.NOT_FOUND;
             case ILLEGAL_TRANSITION -> HttpStatus.CONFLICT;
-            case IDEMPOTENCY_KEY_REUSED, INVALID_NETWORK_EVENT -> HttpStatus.UNPROCESSABLE_ENTITY;
+            case IDEMPOTENCY_KEY_REUSED, INVALID_NETWORK_EVENT, INVALID_MESSAGE, UNSUPPORTED_MESSAGE -> HttpStatus.UNPROCESSABLE_ENTITY;
         };
         ProblemDetail p = ProblemDetail.forStatusAndDetail(status, e.getMessage());
         p.setType(URI.create("https://minipay.local/problems/" + e.error().name().toLowerCase(Locale.ROOT).replace('_', '-')));

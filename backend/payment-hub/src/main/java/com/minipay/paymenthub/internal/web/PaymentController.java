@@ -7,6 +7,7 @@ import com.minipay.paymenthub.api.PageView;
 import com.minipay.paymenthub.api.PaymentDetailView;
 import com.minipay.paymenthub.api.PaymentDirection;
 import com.minipay.paymenthub.api.PaymentHubApi;
+import com.minipay.paymenthub.api.PaymentPreview;
 import com.minipay.paymenthub.api.PaymentQuery;
 import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.api.PaymentView;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -91,8 +93,26 @@ class PaymentController {
         return hub.get(uetr);
     }
 
+    @PostMapping(value = "/inbound", consumes = {MediaType.APPLICATION_XML_VALUE, MediaType.TEXT_XML_VALUE, MediaType.TEXT_PLAIN_VALUE})
+    @Operation(summary = "Receive a pacs.002 (status) or pacs.004 (return) from another bank, as raw XML",
+            description = "The message is stored exactly as received, even if it is invalid (422). A resend of the same "
+                    + "message (same sender and MsgId) is recognised and changes nothing (200, Idempotent-Replayed).")
+    ResponseEntity<PaymentView> inbound(@RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
+                                        @RequestBody String raw) {
+        return respond(hub.receiveMessage(requireKey(key), raw));
+    }
+
+    @PostMapping("/preview")
+    @Operation(summary = "The pacs.008 this payment would produce if sent now. Nothing is created, held or booked.")
+    PaymentPreview preview(@Valid @RequestBody CreatePaymentRequest body) {
+        return hub.preview(new CreatePaymentCommand("preview", body.debtorAccount(), body.creditorName(),
+                body.creditorAccount(), body.creditorAgentBic(), body.amount(), body.chargeBearer(),
+                body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation()));
+    }
+
     @PostMapping("/{uetr}/network-events")
-    @Operation(summary = "SIMULATION (until M5): apply a network outcome — ACCEPTED (pacs.002), SETTLED, RETURNED (pacs.004)")
+    @Operation(summary = "SIMULATION (until M5): the next bank answers — it sends us a pacs.002 (ACCEPTED: ACCP, "
+            + "SETTLED: ACSC) or a pacs.004 (RETURNED), which is then received like any real message")
     ResponseEntity<PaymentView> networkEvent(@RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
                                              @PathVariable String uetr,
                                              @Valid @RequestBody NetworkEventRequest body) {

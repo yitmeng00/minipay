@@ -8,7 +8,7 @@ and re-implements them with React + Tailwind. `canvas.json` lists the screens:
 
 | # | File | Screen | Powered by milestone |
 |---|------|--------|----------------------|
-| 1 | Main.dc.html | Overview dashboard | M2+ |
+| 1 | Main.dc.html | Overview dashboard | M3 (sanctions M6, liquidity limits M7, recon M8) |
 | 2 | Payments.dc.html | Payments list | M2 |
 | 3 | PaymentDetail.dc.html | Payment detail | M2/M4 |
 | 4 | CreatePayment.dc.html | Create payment (test tool) | M2/M3 |

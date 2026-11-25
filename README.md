@@ -17,15 +17,16 @@ The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have vali
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (start with ADR-001, then ADR-002)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data)
 design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     3 × PostgreSQL 16 (one per bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
   common/              Money, ISO 4217 minor units, UETR, BIC — no framework code
   ledger/              Double-entry ledger (M1)
   payment-hub/          Payment lifecycle, state machine, idempotent API, outbox → Kafka (M2)
-  messaging/ refdata/ compliance/ settlement/ recon/ network-simulator/
-                       Placeholders for M3–M8
+  refdata/             Effective-dated BIC directory, IBAN registry, calendars, cut-offs, routing (M3)
+  messaging/ compliance/ settlement/ recon/ network-simulator/
+                       Placeholders for M4–M8
   bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
@@ -46,8 +47,8 @@ These rules are non-negotiable. The reasoning behind them is in [ADR-001](docs/a
 6. **No direct Kafka publishing from business code.** Use the transactional outbox and its relay; ArchUnit enforces this.
 7. **Every payment status change is validated by a state machine and recorded in history.**
 8. **Raw messages are stored exactly as received or sent**, alongside the parsed fields (M4).
-9. **Reference data is effective-dated.** Lookups take a date (M3).
-10. **Timestamps are `TIMESTAMPTZ` in UTC; value dates are `DATE`.** "Today" and cut-offs follow the bank's time zone.
+9. **Reference data is effective-dated.** Every lookup takes a date; rows are end-dated, never edited or deleted.
+10. **Timestamps are `TIMESTAMPTZ` in UTC; value dates are `DATE`.** "Today" follows the bank's time zone; a cut-off is wall-clock time in its settlement scheme's time zone (T2: Frankfurt).
 11. **Real ISO codes:** reason codes (AM04, AC01 …), charge bearer (DEBT/CRED/SHAR), valid-format BICs and IBANs.
 12. **Module boundaries:**
     - Modules talk through `com.minipay.<module>.api` only; `internal` packages are private (ArchUnit).
@@ -70,6 +71,8 @@ cd backend
 ./mvnw install -DskipTests
 ./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-a
 #   or: java -jar bank-app/target/bank-app-0.1.0-SNAPSHOT.jar --spring.profiles.active=bank-a
+#   (after changing another module, rebuild the jar with `./mvnw -pl bank-app clean package -DskipTests`:
+#    Spring Boot only repackages it when bank-app itself changed, so it can keep stale module jars)
 #   Banks B and C: the same command with bank-b / bank-c, in other terminals.
 
 # 4. Ops console (another terminal)
@@ -79,8 +82,10 @@ npm run dev        # http://localhost:5173
 ```
 
 On first start each bank **seeds** its chart of accounts and opening balances through the
-ledger API. The seed list is in `bank-app/src/main/resources/application-bank-*.yml`. Seeding
-uses fixed idempotency keys, so restarting changes nothing.
+ledger API, and its routing table through the reference data import API. The seed lists are in
+`bank-app/src/main/resources/application-bank-*.yml`. Seeding is idempotent, so restarting changes
+nothing. The shared reference data (BIC directory, IBAN registry, calendars) comes with the refdata
+module's Flyway migrations.
 
 - **API docs:** http://localhost:8081/swagger-ui.html
 - **Health:** http://localhost:8081/actuator/health
@@ -145,14 +150,14 @@ Then open http://localhost:5173/accounts?account=514087234412 to see the same ac
 ```bash
 P=localhost:8081/api/payments
 
-# 1. Send EUR 48,250 to Harlow & Finch in London. Bank A has no EUR account with Bank C, so it
-#    routes serially via its EUR correspondent, Bank B. Our EUR 20 fee is charged on top (SHAR).
+# 1. Send EUR 48,250 to Harlow & Finch in London. Bank A has no EUR account with Bank C, so routing
+#    rule R-003 sends it serially via its EUR correspondent, Bank B. Our EUR 20 fee is charged on top (SHAR).
 curl -s -X POST $P -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-pay-1' -d '{
   "debtorAccount": "514087234412", "creditorName": "Harlow & Finch Engineering Ltd",
   "creditorAccount": "GB67 MNPC 4005 1271 5200 93", "creditorAgentBic": "MNPCGB2LXXX",
   "amount": {"amount": "48250.00", "currency": "EUR"}, "chargeBearer": "SHAR",
   "endToEndId": "INV-HF-2026-1187", "remittanceInformation": "INV-HF-2026-1187 CNC spindle assemblies"}' \
-  | tee /tmp/pay.json | jq '{uetr, status, instructionId, instructedAgentBic, chargesAmount, valueDate}'
+  | tee /tmp/pay.json | jq '{uetr, status, instructionId, instructedAgentBic, routingRuleId, chargesAmount, valueDate}'
 UETR=$(jq -r .uetr /tmp/pay.json); ID=$(jq -r .id /tmp/pay.json)
 
 # 2. Its audit trail and the ledger entries it caused (hold, release, principal, fee)
@@ -186,6 +191,67 @@ docker exec minipay-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
 
 In the console: http://localhost:5173/payments, then open a payment to see its lifecycle, ledger
 postings and audit log, or use **Create payment** with the scenario presets.
+
+### Sample calls: reference data (Bank A)
+
+Run against a fresh database (`docker compose down -v` first), because step 5 publishes a release.
+Its key makes a second run replay, but after a week the dates in it are in the past.
+
+```bash
+R=localhost:8081/api/refdata
+
+# 1. Current data version, and the BIC directory as of a date (try a date before 2026-10-02:
+#    the Berlin branch still has its old name)
+curl -s $R | jq '{dataVersion, institutions, routingRules}'
+curl -s "$R/bics/MNPBDEFF100/history" | jq '.[] | {institutionName, validFrom, validTo}'
+curl -s "$R/bics/MNPXNL2AXXX?date=2027-01-04" | jq '{status, detail}'   # gone after 2026-12-31 → 404
+
+# 2. IBAN validation reports every check (one wrong digit → mod-97 fails, expected digits shown)
+curl -s $R/iban/GB97MNPC60161331926819 | jq '{valid, checks: [.checks[] | "\(.outcome) \(.name): \(.detail)"]}'
+
+# 3. Value dates: TARGET is closed on 25 and 26 December, so Christmas Day rolls to Monday 28th.
+#    Cut-offs are per scheme, in the scheme's own time zone (shown here as UTC instants).
+curl -s "$R/value-date?currency=EUR&date=2026-12-25" | jq '{valueDate, reasons}'
+curl -s $R/cutoffs | jq '.[] | {schemeName, currency, settlementDate, cutoff}'
+
+# 4. Routing is evaluated on the value date: Paris goes serial until 30 Nov, by cover from 1 Dec
+for d in 2026-11-30 2026-12-01; do
+  curl -s "$R/routes?bic=MNPEFRPPXXX&currency=EUR&date=$d" \
+    | jq -c '{valueDate, rule: .route.rule.ruleId, method: .route.rule.method, instructedAgent: .route.instructedAgentBic}'
+done
+
+# 5. Publish a change as a new release: Belgium moves from serial to cover in a week's time.
+#    The superseded rule R-004 is end-dated the day before, in the same transaction.
+FROM=$(date -d '+7 days' +%F 2>/dev/null || date -v+7d +%F)
+curl -s -X POST $R/routing-rules -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-rule-1' -d "{
+  \"destination\": \"MNPDBEBB*\", \"currency\": \"EUR\", \"method\": \"COVER\", \"nextHopBic\": \"MNPBDEFFXXX\",
+  \"settlementAccount\": \"1101-EUR-MNPB\", \"priority\": 20, \"effectiveFrom\": \"$FROM\", \"supersedes\": \"R-004\",
+  \"publishedBy\": \"r.lim\", \"approvedBy\": \"a.wong\", \"description\": \"Belgium by cover\"}" | jq '{ruleId, effectiveFrom, releaseVersion}'
+curl -s $R/routing-rules | jq -c '.[] | select(.destination == "MNPDBEBB*") | {ruleId, method, effectiveFrom, effectiveTo}'
+
+# 6. Four-eyes: the author cannot approve their own change → 422
+curl -s -X POST $R/routing-rules -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-rule-2' -d "{
+  \"destination\": \"MNPDBEBB*\", \"currency\": \"EUR\", \"method\": \"SERIAL\", \"nextHopBic\": \"MNPBDEFFXXX\",
+  \"settlementAccount\": \"1101-EUR-MNPB\", \"priority\": 30, \"effectiveFrom\": \"$FROM\",
+  \"publishedBy\": \"r.lim\", \"approvedBy\": \"r.lim\", \"description\": \"Self-approved\"}" | jq '{status, code}'
+
+# 7. The payment hub uses all of it: a Saturday request executes on Monday; an IBAN of Bank C sent
+#    to a Belgian bank is rejected AC03
+P=localhost:8081/api/payments
+curl -s -X POST $P -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-pay-sat' -d '{
+  "debtorAccount": "514087234412", "creditorName": "Atelier Lumière SARL",
+  "creditorAccount": "FR76 3000 6000 0112 3456 7890 189", "creditorAgentBic": "MNPEFRPPXXX",
+  "amount": {"amount": "1250.00", "currency": "EUR"}, "chargeBearer": "SHAR", "requestedExecutionDate": "2026-12-05"}' \
+  | jq '{status, requestedExecutionDate, executionDate}'
+curl -s -X POST $P -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-pay-ac03' -d '{
+  "debtorAccount": "514087234412", "creditorName": "Brouwerij De Klok NV",
+  "creditorAccount": "GB67 MNPC 4005 1271 5200 93", "creditorAgentBic": "MNPDBEBBXXX",
+  "amount": {"amount": "500.00", "currency": "EUR"}, "chargeBearer": "SHAR"}' | jq '{status, rejectionReason, rejectionDetail}'
+```
+
+In the console: http://localhost:5173/reference-data. Change **As of** to see the directory, the IBAN
+registry and the routing table as they were, or will be, on another date. **Overview** shows today's
+figures and each currency's cut-off in the bank's local time.
 
 ## What you should learn from M1 (ledger)
 
@@ -272,6 +338,41 @@ every event carries an `event-id`, and why consumers must de-duplicate.
 uses `@Version`, and the loser of a rare race just retries. One ledger account can see hundreds of
 writers, so the ledger locks rows. Pick the lock for the contention you actually have.
 
+## What you should learn from M3 (reference data)
+
+**Facts have dates.** A bank is renamed on 2 October, a route changes on 1 December, a BIC disappears
+at year end. So every row is valid over a date range, and every question is asked "as of" a date.
+Nothing is overwritten. A change is a new row, and the old one is end-dated. PostgreSQL enforces both
+halves: an `EXCLUDE` constraint makes two versions on the same day impossible, and a trigger refuses
+any update other than shortening a validity.
+
+**The date that matters is the day the money moves.** A payment warehoused for next week is checked
+against next week's directory and routed by next week's rules. Bank A pays Paris serially via Bank B
+until 30 November, and by cover from 1 December. The route a payment took is stored with it (R-005,
+R-006), so it can be explained later.
+
+**Format-valid is not the same as valid.** `MNPZDEFFXXX` is a perfectly shaped BIC of a bank that does
+not exist (RC01). `GB97 MNPC…` fails mod-97 by one digit (AC03). A valid IBAN of a London bank, sent
+to a Brussels bank, is rejected too (AC03): one of the two is wrong, and guessing could pay the wrong
+bank.
+
+**Business days and cut-offs belong to the currency.** A EUR payment needs a TARGET business day
+before T2's cut-off, and 17:00 Frankfurt time is 00:00 or 23:00 in Kuala Lumpur depending on the
+season. Store the cut-off in the scheme's time zone and convert at the moment of use. Requested dates
+on a weekend or holiday roll forward to the next business day. A payment that misses the cut-off still
+leaves now, with the next value date.
+
+**Routing is a decision, and decisions are explicit.** The lowest priority wins. A rule that cannot be
+used (receiver not connected, settlement account closed) rejects the payment CNOR, instead of quietly
+falling through to some other route.
+
+**Retries must ask the same question.** The ledger booking includes the value date. A retry after the
+cut-off must reuse the date already booked, or the ledger sees a different request under the same
+idempotency key and refuses it.
+
+**Reference data is governed.** It arrives in releases, each published by one person and approved by
+another (four eyes; the database refuses self-approval), and is never back-dated.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -279,7 +380,7 @@ writers, so the ledger locks rows. Pick the lock for the contention you actually
 | M0 | Foundation: modules, Compose, Flyway, Money/UETR/BIC, ADR-001, CI | ✅ |
 | M1 | Ledger: double entry, append-only, holds, locking, idempotency, integrity, Accounts screen | ✅ |
 | M2 | Payment hub: idempotent payment API, state machine, history, outbox + Kafka relay, crash safety, Payments screens | ✅ |
-| M3 | Reference data: BIC directory, IBAN, routing, holidays, cut-offs | |
+| M3 | Reference data: effective-dated BIC directory, IBAN registry, routing rules, holidays, cut-offs; Overview and Reference data screens | ✅ |
 | M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 | |
 | M5 | Network simulator, 3 banks, UETR tracker (serial and cover) | |
 | M6 | Compliance: sanctions screening, 4-eyes release | |

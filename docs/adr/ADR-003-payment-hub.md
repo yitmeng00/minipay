@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-24
 - **Milestone:** M2
+- **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates
 
 ## Context
 
@@ -124,8 +125,15 @@ repeated.
 | Amount does not cover our fee under CRED | AM12 |
 | No route in this currency | CNOR |
 
-IBAN country rules with mod-97, BIC existence and reachability, and cut-offs are reference-data
-checks added in M3.
+**From M3 (ADR-004 §3–§6)** validation also uses reference data, each check as of the payment's
+execution date:
+
+| Check (M3) | Code |
+|---|---|
+| Currency has no settlement scheme (we do not settle it) | AM03 |
+| Creditor agent not in the BIC directory on the execution date | RC01 |
+| IBAN fails the IBAN registry's checks, belongs to another bank, or is missing for an IBAN country | AC03 |
+| No usable routing rule on the execution date | CNOR (before any hold) |
 
 ### 6. Charges (who pays our fee)
 
@@ -150,21 +158,26 @@ because they genuinely differ.
 Not yet modelled: under DEBT, the debtor should also prepay the intermediaries' charges. That needs
 the route's tariffs, which come with the network simulator.
 
-### 7. Interim routing (until M3)
+### 7. Interim routing (until M3) — *replaced by routing rules, ADR-004 §6*
 
 1. The creditor agent holds a **vostro** with us in this currency → credit it (we pay them on our books).
 2. We hold a **nostro** at the creditor agent → credit it, and send directly.
 3. Otherwise our single nostro in that currency is our correspondent → credit it, and send serially via that bank.
 4. Otherwise → REJECTED **CNOR**, and the hold is released.
 
-The chosen next bank is stored as `instructed_agent_bic` (pacs.008 `InstdAgt`). M3 replaces this
-with effective-dated routing rules.
+The chosen next bank is stored as `instructed_agent_bic` (pacs.008 `InstdAgt`). Since M3 the
+choice comes from effective-dated routing rules evaluated on the value date, and the rule id is
+stored as `routing_rule_id`.
 
 ### 8. Warehousing
 
 A future `requested_exec_date` puts the payment on hold at FUNDS_RESERVED: the funds are reserved
-but it is not sent. The sweeper sends it on that business date (bank time zone). Cut-off times (M3)
-will refine "on that date" to "before the currency's cut-off".
+but it is not sent. The sweeper sends it on that business date (bank time zone).
+
+Since M3 (ADR-004 §5) the payment waits for its **execution date**: the requested date rolled to the
+currency's next business day. When it is sent, its **value date** is the first business day whose
+cut-off, in the scheme's own time zone, has not passed. The sweeper picks up only reserved payments
+that are due, so payments waiting for a later date no longer take a place in every sweep.
 
 ### 9. Transactional outbox + relay → Kafka
 

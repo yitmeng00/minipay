@@ -17,7 +17,7 @@ The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have vali
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging)
 design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     3 × PostgreSQL 16 (one per bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
@@ -25,8 +25,9 @@ backend/               Maven multi-module, Java 21, Spring Boot 3.5
   ledger/              Double-entry ledger (M1)
   payment-hub/          Payment lifecycle, state machine, idempotent API, outbox → Kafka (M2)
   refdata/             Effective-dated BIC directory, IBAN registry, calendars, cut-offs, routing (M3)
-  messaging/ compliance/ settlement/ recon/ network-simulator/
-                       Placeholders for M4–M8
+  messaging/           pacs.008/002/004, camt.053, MT103 translation, raw message store (M4)
+  compliance/ settlement/ recon/ network-simulator/
+                       Placeholders for M5–M8
   bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
@@ -46,7 +47,7 @@ These rules are non-negotiable. The reasoning behind them is in [ADR-001](docs/a
    - The same key with a different body is **422**.
 6. **No direct Kafka publishing from business code.** Use the transactional outbox and its relay; ArchUnit enforces this.
 7. **Every payment status change is validated by a state machine and recorded in history.**
-8. **Raw messages are stored exactly as received or sent**, alongside the parsed fields (M4).
+8. **Raw messages are stored exactly as received or sent**, alongside the parsed fields; the database checks their SHA-256.
 9. **Reference data is effective-dated.** Every lookup takes a date; rows are end-dated, never edited or deleted.
 10. **Timestamps are `TIMESTAMPTZ` in UTC; value dates are `DATE`.** "Today" follows the bank's time zone; a cut-off is wall-clock time in its settlement scheme's time zone (T2: Frankfurt).
 11. **Real ISO codes:** reason codes (AM04, AC01 …), charge bearer (DEBT/CRED/SHAR), valid-format BICs and IBANs.
@@ -253,6 +254,53 @@ In the console: http://localhost:5173/reference-data. Change **As of** to see th
 registry and the routing table as they were, or will be, on another date. **Overview** shows today's
 figures and each currency's cut-off in the bank's local time.
 
+### Sample calls: messages (Bank A)
+
+Every step can be run again: the keys include a timestamp.
+
+```bash
+P=localhost:8081/api/payments; M=localhost:8081/api/messages; RUN=$(date +%s)
+
+# 1. Send a payment: the send step issues one pacs.008 to the next bank, stored byte for byte
+UETR=$(curl -s -X POST $P -H 'Content-Type: application/json' -H "Idempotency-Key: m4-pay-$RUN" -d '{
+  "debtorAccount": "514087234412", "creditorName": "Harlow & Finch Engineering Ltd",
+  "creditorAccount": "GB67 MNPC 4005 1271 5200 93", "creditorAgentBic": "MNPCGB2LXXX",
+  "amount": {"amount": "1250.00", "currency": "EUR"}, "chargeBearer": "SHAR",
+  "endToEndId": "INV-HF-2026-1201", "remittanceInformation": "INV-HF-2026-1201 spindle bearings"}' | jq -r .uetr)
+curl -s "$M?uetr=$UETR" | jq -c '.[] | {type, direction, msgId, receiverBic, amount: .amount.amount}'
+ID=$(curl -s "$M?uetr=$UETR" | jq -r '.[0].id')
+curl -s $M/$ID/raw | sed -n '1,4p'
+
+# 2. The same payment as MT103, and what the translation keeps, changes or loses
+curl -s $M/$ID/mt103 | jq -r '.target'
+curl -s $M/$ID/mt103 | jq -c '.fields[] | select(.fidelity != "EQUIVALENT") | {mtTag, mxPath, fidelity, note}'
+
+# 3. Bank B acknowledges it: a pacs.002 ACCP, simulated until M5 but received like a real message
+curl -s -X POST $P/$UETR/network-events -H 'Content-Type: application/json' -H "Idempotency-Key: m4-ack-$RUN" \
+  -d '{"type": "ACCEPTED"}' | jq -c '{status}'
+curl -s "$M?uetr=$UETR" | jq -c '.[] | {type, direction, msgId, senderBic, status, originalMsgId}'
+
+# 4. Resend Bank B's pacs.002 to the inbound endpoint: recognised by sender + MsgId, nothing changes
+ACK=$(curl -s "$M?uetr=$UETR" | jq -r '.[] | select(.type == "PACS_002") | .id')
+curl -s $M/$ACK/raw > /tmp/pacs002.xml
+curl -si -X POST $P/inbound -H 'Content-Type: application/xml' -H "Idempotency-Key: m4-resend-$RUN" \
+  --data-binary @/tmp/pacs002.xml | grep -iE "^HTTP|replayed"
+
+# 5. A broken message is refused (422) but kept, marked INVALID, with every error listed
+sed 's/<pacs:TxSts>ACCP/<pacs:TxSts>NOPE/; s/-002-/-002-X/g' /tmp/pacs002.xml > /tmp/bad.xml
+curl -s -X POST $P/inbound -H 'Content-Type: application/xml' -H "Idempotency-Key: m4-bad-$RUN" \
+  --data-binary @/tmp/bad.xml | jq -c '{status, code, detail}'
+
+# 6. Bank B issues a camt.053 for Bank A's vostro (what Bank A reconciles in M8)
+VOSTRO=$(curl -s "localhost:8082/api/ledger/accounts?type=VOSTRO" | jq '.[0].id')
+curl -s -X POST localhost:8082/api/messages/camt053 -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: m4-stmt-$RUN" -d "{\"accountId\": $VOSTRO}" | jq -c '{type, msgId, receiverBic, account, closingBalance: .amount}'
+```
+
+In the console, open the payment and its **Messages** tab, then switch a pacs.008 to **MT103
+side-by-side**. **Create payment** shows the pacs.008 the form would produce, and **Accounts &
+ledger** issues a camt.053 for a customer or vostro account.
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -373,6 +421,34 @@ idempotency key and refuses it.
 **Reference data is governed.** It arrives in releases, each published by one person and approved by
 another (four eyes; the database refuses self-approval), and is never back-dated.
 
+## What you should learn from M4 (messaging)
+
+**A payment between banks is a message.** The pacs.008 carries everything the next bank needs: UETR,
+amounts, charge bearer, parties, agents, and how settlement works. `SttlmMtd` INDA means "debit my
+account with you"; INGA means "I credit yours with me". The answers are messages too: a pacs.002 with
+a status (ACCP, ACSC, RJCT) and a pacs.004 that brings money back, minus what the banks kept.
+
+**A message has a header and a body.** The Business Application Header says who sends what to whom,
+under which rules (CBPR+). The Document says what. Both must agree, and the receiver checks.
+
+**Keep the bytes.** What you sent and what you received are evidence, so the raw text is stored
+untouched and the database checks its hash. Parsed columns are an index into it, never a replacement.
+Even an invalid message is kept: it is the one you will be asked about.
+
+**"Did I already see this?" has two answers.** Outbound, a business key ("the pacs.008 for this
+payment") makes a retried step get back the message it already sent. Inbound, the sender's MsgId
+identifies a message, so a resend is recognised and not acted on twice. Networks also deliver out of
+order: an old status must never move a payment backwards.
+
+**MT and MX are not the same information.** MT103 has 35-character lines, a restricted character set
+and no end-to-end id. A translation from MX loses or reshapes information, and a translation back
+cannot restore it. The translator says field by field what was kept, transformed, truncated or lost.
+That is why CBPR+ limits InstrId to 16 characters while both formats are in use.
+
+**Statements are written for the account holder.** A camt.053 for a vostro tells the other bank what
+moved on its account with us. In M8 that bank compares it with its own nostro. That comparison is
+reconciliation.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -381,7 +457,7 @@ another (four eyes; the database refuses self-approval), and is never back-dated
 | M1 | Ledger: double entry, append-only, holds, locking, idempotency, integrity, Accounts screen | ✅ |
 | M2 | Payment hub: idempotent payment API, state machine, history, outbox + Kafka relay, crash safety, Payments screens | ✅ |
 | M3 | Reference data: effective-dated BIC directory, IBAN registry, routing rules, holidays, cut-offs; Overview and Reference data screens | ✅ |
-| M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 | |
+| M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 with loss report, raw store; Messages tab, pacs.008 preview | ✅ |
 | M5 | Network simulator, 3 banks, UETR tracker (serial and cover) | |
 | M6 | Compliance: sanctions screening, 4-eyes release | |
 | M7 | Settlement: RTGS, deferred net settlement, instant | |

@@ -2,7 +2,18 @@ import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-tab
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Segmented, type Tone } from '../components/ui'
-import { useAccounts, useBankInfo, useIntegrity, useStatement } from '../lib/api'
+import {
+  ApiError,
+  messageDownloadUrl,
+  newIdempotencyKey,
+  useAccounts,
+  useBankInfo,
+  useIntegrity,
+  useIssueStatement,
+  useMessage,
+  useStatement,
+} from '../lib/api'
+import { Code } from '../components/Code'
 import { useBank } from '../lib/banks'
 import { formatMoney, isNegative, isZero } from '../lib/money'
 import type { Account, AccountStatus, AccountType, EntryType, IntegrityReport, Statement } from '../lib/types'
@@ -212,6 +223,14 @@ function StatementCard({ account, businessDate }: { account: Account; businessDa
         ? addDays(businessDate, -1)
         : customDate || businessDate
   const { data: st, isLoading, isError } = useStatement(account.id, date)
+  // camt.053: we statement the accounts we keep for others; a nostro's statement comes from the bank that keeps it.
+  const statementable = account.type === 'CUSTOMER' || account.type === 'VOSTRO'
+  const issue = useIssueStatement()
+  const [issued, setIssued] = useState<{ id: string; msgId: string | null; replayed: boolean } | null>(null)
+  // One key per (account, date) intention: a double click replays the statement instead of issuing two.
+  const [key, setKey] = useState(() => newIdempotencyKey('ui-camt053'))
+  const issuedRaw = useMessage(issued?.id).data
+  const { bank } = useBank()
 
   return (
     <Card className="overflow-hidden">
@@ -247,8 +266,46 @@ function StatementCard({ account, businessDate }: { account: Account; businessDa
               />
             </label>
           )}
+          <Button
+            className="!h-[30px]"
+            disabled={!statementable || !date || issue.isPending}
+            title={statementable ? 'Issue an ISO 20022 end-of-day statement for this account' : 'The camt.053 for a ' + account.type.toLowerCase() + ' account comes from the bank that keeps it'}
+            onClick={() =>
+              date &&
+              issue.mutate(
+                { accountId: account.id, date, key },
+                {
+                  onSuccess: (r) => {
+                    setIssued({ id: r.value.id, msgId: r.value.msgId, replayed: r.replayed })
+                    setKey(newIdempotencyKey('ui-camt053'))
+                  },
+                },
+              )
+            }
+          >
+            Generate camt.053
+          </Button>
         </div>
       </CardHeader>
+      {issue.error && <div className="border-b border-line2 px-4 py-2 text-xs text-err-fg">{(issue.error as ApiError).message}</div>}
+      {issued && (
+        <details className="border-b border-line2" open>
+          <summary className="flex cursor-pointer flex-wrap items-center gap-2.5 px-4 py-2 text-xs">
+            <Chip tone="ok">camt.053 issued</Chip>
+            <span className="mono">{issued.msgId}</span>
+            <span className="text-muted">
+              {issued.replayed ? 'replayed' : 'stored'} · to {account.counterpartyBic ?? 'the customer channel'}
+            </span>
+            <a className="ml-auto font-medium text-accent no-underline" href={messageDownloadUrl(bank.id, issued.id)}>
+              Download
+            </a>
+            <button type="button" className="cursor-pointer border-0 bg-transparent text-muted" onClick={() => setIssued(null)}>
+              Close
+            </button>
+          </summary>
+          {issuedRaw && <Code text={issuedRaw.raw} className="max-h-[420px]" />}
+        </details>
+      )}
 
       {isError && <div className="px-4 py-7 text-center text-err-fg">Could not load the statement.</div>}
       {isLoading && <div className="px-4 py-7 text-center text-muted">Loading statement…</div>}

@@ -181,7 +181,8 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
             assertThat(p.executionDate()).isEqualTo(TODAY);
             assertThat(p.valueDate()).isEqualTo(TODAY.plusDays(1));
             assertThat(hub.get(p.uetr()).history().get(4).detail())
-                    .startsWith("Value date 2026-11-25 (RENTAS cut-off 18:00 Asia/Kuala_Lumpur on 2026-11-24 has passed)");
+                    .matches("pacs\\.008 MNPA20261124-008-\\d{6} → MNPBDEFFXXX · value date 2026-11-25 "
+                            + "\\(RENTAS cut-off 18:00 Asia/Kuala_Lumpur on 2026-11-24 has passed\\).*");
         } finally {
             clock.advance(Duration.ofHours(-9));
         }

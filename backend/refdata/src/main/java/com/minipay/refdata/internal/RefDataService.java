@@ -217,7 +217,7 @@ public class RefDataService implements RefDataApi {
                     i.effectiveFrom(), i.effectiveTo(), i.releaseVersion());
             Optional<RoutingRuleView> existing = repo.rule(i.ruleId());
             if (existing.isPresent()) {
-                if (!existing.get().equals(rule)) {
+                if (!sameRuleOrEndDatedSince(existing.get(), rule)) {
                     throw new IllegalStateException("Rule " + i.ruleId() + " already exists with different content: "
                             + existing.get() + " vs " + rule);
                 }
@@ -228,6 +228,22 @@ public class RefDataService implements RefDataApi {
             }
             insert(rule);
         }
+    }
+
+    /**
+     * The stored rule is the imported one, possibly end-dated since by a later release (superseded).
+     * The database then knows more than the file: that is not a conflict. Anything else is.
+     */
+    private static boolean sameRuleOrEndDatedSince(RoutingRuleView stored, RoutingRuleView imported) {
+        if (stored.equals(imported)) {
+            return true;
+        }
+        RoutingRuleView unEnded = new RoutingRuleView(stored.ruleId(), stored.destination(), stored.currency(), stored.method(),
+                stored.nextHopBic(), stored.settlementAccount(), stored.priority(), stored.effectiveFrom(),
+                imported.effectiveTo(), stored.releaseVersion());
+        boolean shortened = stored.effectiveTo() != null
+                && (imported.effectiveTo() == null || stored.effectiveTo().isBefore(imported.effectiveTo()));
+        return shortened && unEnded.equals(imported);
     }
 
     private void insert(RoutingRuleView rule) {

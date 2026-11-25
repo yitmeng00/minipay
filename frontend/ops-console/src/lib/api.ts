@@ -10,6 +10,10 @@ import type {
   DailyOverview,
   Holiday,
   IbanCheck,
+  MessageDetail,
+  MessageView,
+  PaymentPreview,
+  Translation,
   IntegrityReport,
   JournalEntry,
   Money,
@@ -317,5 +321,72 @@ export function useValueDate(currency: string | undefined, date: string | undefi
     queryFn: () => getJson<ValueDating>(`/${bank.id}/api/refdata/value-date?currency=${currency}${date ? `&date=${date}` : ''}`),
     enabled: !!currency,
     retry: false,
+  })
+}
+
+// ---------------------------------------------------------------- messages
+
+export function useMessages(uetr: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'messages', uetr],
+    queryFn: () => getJson<MessageView[]>(`/${bank.id}/api/messages?uetr=${uetr}`),
+    enabled: !!uetr,
+    refetchInterval: 5_000,
+  })
+}
+
+export function useMessage(id: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'message', id],
+    queryFn: () => getJson<MessageDetail>(`/${bank.id}/api/messages/${id}`),
+    enabled: !!id,
+    staleTime: Infinity, // a stored message never changes
+  })
+}
+
+export function useMt103(id: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'message', id, 'mt103'],
+    queryFn: () => getJson<Translation>(`/${bank.id}/api/messages/${id}/mt103`),
+    enabled: !!id,
+    staleTime: Infinity,
+  })
+}
+
+export function messageDownloadUrl(bankId: string, id: string) {
+  return `/${bankId}/api/messages/${id}/raw`
+}
+
+/** The pacs.008 the form would produce. A read-only POST (nothing is stored), so no Idempotency-Key. */
+export function usePaymentPreview(body: CreatePaymentBody | null) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'payment-preview', JSON.stringify(body)],
+    queryFn: async () => {
+      const res = await fetch(`/${bank.id}/api/payments/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new ApiError(res.status, json.code, json.reasonCode, json.detail)
+      return json as PaymentPreview
+    },
+    enabled: !!body,
+    placeholderData: (prev) => prev,
+    retry: false,
+  })
+}
+
+export function useIssueStatement() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ accountId, date, key }: { accountId: number; date: string; key: string }) =>
+      postJson<MessageView>(`/${bank.id}/api/messages/camt053`, { accountId, date }, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id, 'messages'] }),
   })
 }

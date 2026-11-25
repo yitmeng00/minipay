@@ -22,8 +22,8 @@
         <module>common</module>
         <module>ledger</module>
         <module>refdata</module>
-        <module>payment-hub</module>
         <module>messaging</module>
+        <module>payment-hub</module>
         <module>compliance</module>
         <module>settlement</module>
         <module>recon</module>
@@ -35,6 +35,10 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <springdoc.version>2.8.17</springdoc.version>
+        <!-- Prowide: open-source ISO 20022 (MX) and SWIFT MT model, parser and writer (Apache 2.0). -->
+        <prowide.iso20022.version>SRU2025-10.4.0</prowide.iso20022.version>
+        <!-- Overrides Spring Boot's managed 3.17: Prowide is built against 3.20 (uses org.apache.commons.lang3.Strings). -->
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <archunit.version>1.4.1</archunit.version>
         <!-- 1.21.4 negotiates the Docker API version correctly with recent Docker Engines. -->
         <testcontainers.version>1.21.4</testcontainers.version>
@@ -56,6 +60,16 @@
                 <groupId>com.minipay</groupId>
                 <artifactId>refdata</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.minipay</groupId>
+                <artifactId>messaging</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.prowidesoftware</groupId>
+                <artifactId>pw-iso20022</artifactId>
+                <version>${prowide.iso20022.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>

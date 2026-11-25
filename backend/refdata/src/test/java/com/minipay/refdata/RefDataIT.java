@@ -191,6 +191,27 @@ class RefDataIT {
     }
 
     @Test
+    void re_importing_a_rule_that_was_superseded_since_is_not_a_conflict() {
+        // A bank seeds its routing table, publishes a change that end-dates a seeded rule, and restarts:
+        // the seed file still says "open-ended", the database knows better. Startup must not fail.
+        String dest = randomBic8() + "*";
+        String id = nextId();
+        RoutingRuleImport seeded = new RoutingRuleImport(id, dest, "EUR", RoutingMethod.SERIAL, "MNPBDEFFXXX",
+                "1101-EUR-MNPB", 20, LocalDate.of(2024, 1, 1), null, "v2024.01.1");
+        refdata.importRoutingRules(List.of(seeded));
+        refdata.createRoutingRule(command(key(), dest, 20, TODAY.plusDays(3), null, id));
+
+        refdata.importRoutingRules(List.of(seeded)); // restart
+
+        assertThat(refdata.routingRules()).filteredOn(r -> r.ruleId().equals(id)).singleElement()
+                .satisfies(r -> assertThat(r.effectiveTo()).isEqualTo(TODAY.plusDays(2)));
+        // A real difference is still refused.
+        RoutingRuleImport changed = new RoutingRuleImport(id, dest, "EUR", RoutingMethod.SERIAL, "MNPBDEFFXXX",
+                "1101-EUR-MNPB", 25, LocalDate.of(2024, 1, 1), null, "v2024.01.1");
+        assertThatThrownBy(() -> refdata.importRoutingRules(List.of(changed))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void publishing_a_rule_that_supersedes_another_end_dates_it_with_no_gap() {
         String dest = randomBic8() + "*";
         RoutingRuleView first = publish(dest, 30, TODAY, null).value();

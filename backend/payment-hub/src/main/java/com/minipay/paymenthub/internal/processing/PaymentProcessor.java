@@ -14,6 +14,11 @@ import com.minipay.ledger.api.ReservationView;
 import com.minipay.ledger.api.ReserveFundsCommand;
 import com.minipay.ledger.api.SettleReservationCommand;
 import com.minipay.ledger.api.SettlementLeg;
+import com.minipay.common.iso.ChargeBearer;
+import com.minipay.messaging.api.CreditTransfer;
+import com.minipay.messaging.api.MessageView;
+import com.minipay.messaging.api.MessagingApi;
+import com.minipay.messaging.api.SettlementMethod;
 import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.internal.config.PaymentHubProperties;
 import com.minipay.paymenthub.internal.domain.Payment;
@@ -67,13 +72,17 @@ public class PaymentProcessor {
     private final Router router;
     private final LedgerApi ledger;
     private final RefDataApi refdata;
+    private final MessagingApi messaging;
+    private final String ownBic;
     private final PaymentHubProperties props;
     private final Clock clock;
     private final ZoneId bankZone;
 
     public PaymentProcessor(PaymentRepository payments, PaymentTransitions transitions, PaymentValidator validator,
-                            ScreeningPort screening, Router router, LedgerApi ledger, RefDataApi refdata, PaymentHubProperties props,
-                            ObjectProvider<Clock> clock, @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone) {
+                            ScreeningPort screening, Router router, LedgerApi ledger, RefDataApi refdata, MessagingApi messaging,
+                            PaymentHubProperties props, ObjectProvider<Clock> clock,
+                            @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone,
+                            @Value("${minipay.bank.bic}") String ownBic) {
         this.payments = payments;
         this.transitions = transitions;
         this.validator = validator;
@@ -81,6 +90,8 @@ public class PaymentProcessor {
         this.router = router;
         this.ledger = ledger;
         this.refdata = refdata;
+        this.messaging = messaging;
+        this.ownBic = com.minipay.common.id.Bic.parse(ownBic).value();
         this.props = props;
         this.clock = clock.getIfAvailable(Clock::systemUTC);
         this.bankZone = bankZone;
@@ -219,13 +230,76 @@ public class PaymentProcessor {
             return releaseAndReject(p, iso(e), e.getMessage());
         }
         afterSettle.run();
-        String detail = "Value date " + valueDate + rolled + "; booked to " + r.settlementAccountNumber()
-                + "; routed by " + r.describe() + " → " + r.instructedAgentBic()
+        // The pacs.008 is built once per payment (business key): a re-run after a crash finds the message
+        // it already issued, with the same MsgId, instead of sending a second one.
+        MessageView pacs008 = messaging.issuePacs008("pacs.008:" + p.id(), creditTransfer(p, r, valueDate));
+        String detail = "pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic()
+                + " · value date " + valueDate + rolled + "; booked to " + r.settlementAccountNumber()
+                + "; routed by " + r.describe() + ", SttlmMtd " + r.settlementMethod()
                 + (r.method() == RoutingMethod.COVER ? ", cover via " + r.nextHopBic() : "");
         return transitions.transition(p.id(), PaymentStatus.FUNDS_RESERVED, payment -> {
             payment.routed(r.instructedAgentBic(), r.settlementAccountId(), valueDate, r.ruleId());
             return new Change(PaymentStatus.SENT, null, detail, "svc/gateway");
         });
+    }
+
+    /** What our pacs.008 says about this payment. */
+    private CreditTransfer creditTransfer(Payment p, Router.Route r, LocalDate valueDate) {
+        Money amount = Money.of(p.amount(), p.currency());
+        Money fee = Money.of(p.chargesAmount(), p.currency());
+        return new CreditTransfer(p.uetr().toString(), p.instructionId(), p.endToEndId(), ownBic, r.instructedAgentBic(),
+                p.debtorAgentBic(), p.creditorAgentBic(), p.debtorName(), p.debtorAccount(), p.creditorName(),
+                p.creditorAccount(), Money.of(p.interbankSettlementAmount(), p.currency()), amount,
+                // Only under CRED does our fee come out of what is sent; ChrgsInf then explains the difference.
+                p.chargeBearer() == ChargeBearer.CRED ? fee : Money.zero(p.currency()),
+                p.chargeBearer(), valueDate, r.settlementMethod(), p.remittanceInfo());
+    }
+
+    /**
+     * The pacs.008 a payment would produce if it were sent now, without creating, holding or booking
+     * anything: the same fee, value date and route the pipeline would use. What cannot be determined
+     * (no route, no settlement scheme) is reported in the notes, and the preview is built anyway.
+     */
+    public Preview preview(String debtorAccount, String debtorName, String creditorName, String creditorAccount,
+                           String creditorAgentBic, Money amount, ChargeBearer bearer, LocalDate requested,
+                           String endToEndId, String remittance) {
+        List<String> notes = new ArrayList<>();
+        String ccy = amount.currencyCode();
+        Money fee = feeFor(ccy);
+        Charges charges = Charges.of(bearer, amount, fee);
+        LocalDate today = businessDate();
+        LocalDate valueDate = requested != null && requested.isAfter(today) ? requested : today;
+        try {
+            LocalDate execution = refdata.nextBusinessDay(ccy, valueDate);
+            valueDate = refdata.valueDate(ccy, execution, clock.instant()).valueDate();
+        } catch (RefDataException e) {
+            notes.add(e.getMessage());
+        }
+        String instructed = creditorAgentBic;
+        SettlementMethod method = SettlementMethod.INDA;
+        try {
+            Router.Outcome outcome = router.route(creditorAgentBic, ccy, valueDate);
+            if (outcome.route().isPresent()) {
+                instructed = outcome.route().get().instructedAgentBic();
+                method = outcome.route().get().settlementMethod();
+                notes.add("Routed by " + outcome.route().get().describe());
+            } else {
+                notes.add("No route: " + outcome.problem() + " (would be rejected CNOR)");
+            }
+        } catch (RuntimeException e) {
+            notes.add("Cannot route: " + e.getMessage());
+        }
+        String name = debtorName != null ? debtorName
+                : ledger.findAccountByNumber(debtorAccount).map(AccountView::ownerName).orElse("");
+        CreditTransfer t = new CreditTransfer(com.minipay.common.id.Uetr.generate().value(),
+                ownBic.substring(0, 4) + "PREVIEW", endToEndId == null ? "NOTPROVIDED" : endToEndId, ownBic, instructed,
+                ownBic, creditorAgentBic, name, debtorAccount, creditorName, creditorAccount,
+                charges.interbankSettlementAmount(), amount,
+                bearer == ChargeBearer.CRED ? fee : Money.zero(ccy), bearer, valueDate, method, remittance);
+        return new Preview(messaging.renderPacs008(t), notes);
+    }
+
+    public record Preview(String xml, List<String> notes) {
     }
 
     /** Test seam: runs right after the ledger booked the payment, before SENT is recorded. */

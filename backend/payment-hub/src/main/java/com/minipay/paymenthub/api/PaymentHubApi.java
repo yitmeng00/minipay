@@ -25,6 +25,18 @@ public interface PaymentHubApi {
     /** The dashboard figures for one business date (bank time zone). */
     DailyOverview overview(LocalDate date);
 
-    /** Applies a network outcome (ack, settlement, return). Idempotent per key. */
+    /**
+     * SIMULATION (until M5): plays the next bank and sends us its pacs.002 / pacs.004, which is then
+     * received like any real message. Idempotent per key.
+     */
     Replayable<PaymentView> onNetworkEvent(String idempotencyKey, String uetr, NetworkEvent event);
+
+    /**
+     * Receives a message from another bank about a payment we sent (pacs.002 status, pacs.004 return).
+     * The raw message is stored whatever happens; a duplicate (same sender and MsgId) changes nothing.
+     */
+    Replayable<PaymentView> receiveMessage(String idempotencyKey, String raw);
+
+    /** The pacs.008 this payment would produce if sent now; nothing is created, held or booked. */
+    PaymentPreview preview(CreatePaymentCommand command);
 }

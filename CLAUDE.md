@@ -34,7 +34,12 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
 - Hub validates/routes as of the payment's execution date (requested date → next business day), sends with the value
   date (business day whose cut-off, in the scheme's zone, hasn't passed) and re-routes on it. A re-run reuses the
   value date of an existing SETTLE entry.
-- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data.
+- Messaging (Prowide `pw-iso20022`): MX = AppHdr (head.001.001.02, CBPR+) + Document in a BME envelope; one tx per
+  message. Raw text stored unchanged with a DB-checked SHA-256; invalid inbound messages are stored too (INVALID).
+  Outbound dedupe by business key (`pacs.008:<paymentId>`), inbound by (sender, MsgId). Hub → messaging only;
+  inbound pacs.002/004 go through `POST /api/payments/inbound`; the network simulation builds real messages.
+- `commons-lang3.version` is overridden in the parent POM (Prowide needs ≥ 3.18; Boot manages 3.17).
+- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging.
 
 ## Non-negotiable rules
 
@@ -45,7 +50,7 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
 5. Every write API requires `Idempotency-Key`; same key + different body = 422; replay = 200 + `Idempotent-Replayed: true`.
 6. No Kafka publishing from business code — transactional outbox + relay.
 7. Payment status changes go through `PaymentStateMachine` and write history; illegal transitions throw.
-8. Store raw messages unchanged plus parsed fields (M4).
+8. Store raw messages unchanged plus parsed fields; never rebuild a message once sent.
 9. Reference data is effective-dated; lookups take a date (M3).
 10. TIMESTAMPTZ in UTC; value dates are DATE; "today" uses the bank's time zone (`minipay.bank.time-zone`); a cut-off is
     wall-clock time in its settlement scheme's zone, converted per date.

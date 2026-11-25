@@ -4,6 +4,7 @@ import com.minipay.ledger.api.AccountStatus;
 import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.AccountView;
 import com.minipay.ledger.api.LedgerApi;
+import com.minipay.messaging.api.SettlementMethod;
 import com.minipay.refdata.api.RefDataApi;
 import com.minipay.refdata.api.RouteResolution;
 import com.minipay.refdata.api.RoutingMethod;
@@ -29,10 +30,23 @@ public class Router {
      * @param nextHopBic         the correspondent for SERIAL and COVER routes, else null
      */
     public record Route(String ruleId, String releaseVersion, RoutingMethod method, long settlementAccountId,
-                        String settlementAccountNumber, String instructedAgentBic, String nextHopBic) {
+                        String settlementAccountNumber, AccountType settlementAccountType, String instructedAgentBic,
+                        String nextHopBic) {
 
         public String describe() {
             return ruleId + " (" + releaseVersion + ", " + method + ")";
+        }
+
+        /**
+         * pacs.008 SttlmMtd: on whose books the money moves. Our nostro at them → INDA (they debit
+         * it); their vostro with us → INGA (we credit it); a cover payment → COVE; an RTGS → CLRG.
+         */
+        public SettlementMethod settlementMethod() {
+            return switch (method) {
+                case COVER -> SettlementMethod.COVE;
+                case RTGS -> SettlementMethod.CLRG;
+                default -> settlementAccountType == AccountType.VOSTRO ? SettlementMethod.INGA : SettlementMethod.INDA;
+            };
         }
     }
 
@@ -63,7 +77,7 @@ public class Router {
         }
         AccountView a = account.get();
         return new Outcome(Optional.of(new Route(rule.ruleId(), rule.releaseVersion(), rule.method(), a.id(),
-                a.accountNumber(), r.instructedAgentBic(), rule.nextHopBic())), null);
+                a.accountNumber(), a.type(), r.instructedAgentBic(), rule.nextHopBic())), null);
     }
 
     private static String unusable(AccountView a, String currency) {

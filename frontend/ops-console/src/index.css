@@ -29,6 +29,11 @@
   --err: #d93a2e;
   --on-accent: #ffffff;
   --track: #eef0f3;
+  --code-bg: #f8f9fb;
+  --x-tag: #1a52bd;
+  --x-attr: #8a4b00;
+  --x-str: #13662c;
+  --x-p: #646d7a;
   color-scheme: light;
 }
 
@@ -56,6 +61,11 @@
   --err: #ef5a4e;
   --on-accent: #0b0e13;
   --track: #1f2630;
+  --code-bg: #0e1218;
+  --x-tag: #86b4ff;
+  --x-attr: #f3c557;
+  --x-str: #74d893;
+  --x-p: #8a94a3;
   color-scheme: dark;
 }
 
@@ -442,5 +452,65 @@
   }
   .bar.future {
     background: transparent;
+  }
+
+  /* ---- Raw message viewer (design: .code, .cl, .ln, .x-*) */
+  .code {
+    background: var(--code-bg);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 20px;
+  }
+  .cl {
+    display: flex;
+    white-space: pre;
+  }
+  .ln {
+    flex: 0 0 44px;
+    text-align: right;
+    padding-right: 14px;
+    color: var(--x-p);
+    user-select: none;
+    opacity: 0.8;
+  }
+  .x-tag {
+    color: var(--x-tag);
+  }
+  .x-attr {
+    color: var(--x-attr);
+  }
+  .x-str {
+    color: var(--x-str);
+  }
+  .x-p,
+  .x-cmt {
+    color: var(--x-p);
+  }
+  .x-text {
+    color: var(--fg);
+  }
+
+  /* ---- Message list (design: .msg) */
+  .msg {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    padding: 9px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .msg:hover {
+    background: var(--surface2);
+  }
+  .msg.on {
+    background: var(--accent-bg);
+    border-color: var(--border);
   }
 }

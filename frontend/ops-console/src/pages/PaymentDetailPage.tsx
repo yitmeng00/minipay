@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Tabs, type Tone } from '../components/ui'
-import { ApiError, useAccounts, useBankInfo, useBicDirectory, useNetworkEvent, usePayment, usePaymentEntries } from '../lib/api'
+import { ApiError, useAccounts, useBankInfo, useBicDirectory, useMessages, useNetworkEvent, usePayment, usePaymentEntries } from '../lib/api'
+import { MessagesPanel } from '../components/MessagesPanel'
 import { BANKS } from '../lib/banks'
 import { CHARGE_BEARER, REASON, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
 import { formatAmount, formatMoney } from '../lib/money'
@@ -164,11 +165,13 @@ function SimulateNetwork({ p }: { p: Payment }) {
         </div>
       ) : (
         <Button primary disabled={ev.isPending} onClick={() => send({ type: next })}>
-          {next === 'ACCEPTED' ? `pacs.002 ACCP from ${p.instructedAgentBic}` : 'Settlement confirmed'}
+          {next === 'ACCEPTED' ? `pacs.002 ACCP from ${p.instructedAgentBic}` : `pacs.002 ACSC from ${p.instructedAgentBic}`}
         </Button>
       )}
       {ev.error && <span className="text-xs text-err-fg">{(ev.error as ApiError).message}</span>}
-      <span className="text-[11px] text-muted">The network simulator sends these messages from M5</span>
+      <span className="text-[11px] text-muted">
+        Plays {p.instructedAgentBic}: its message is built, stored and received as real · the network sends them from M5
+      </span>
     </div>
   )
 }
@@ -401,10 +404,11 @@ export function PaymentDetailPage() {
   const { ref } = useParams()
   const { data, isLoading, error } = usePayment(ref)
   const entries = usePaymentEntries(data?.payment.id).data ?? []
+  const messages = useMessages(data?.payment.uetr).data ?? []
   const tz = useBankInfo().data?.timeZone ?? 'UTC'
   // The open tab lives in the URL (?tab=ledger) so it can be linked to.
   const [params, setParams] = useSearchParams()
-  const tab = (['parties', 'ledger', 'audit'].includes(params.get('tab') ?? '') ? params.get('tab') : 'parties') as Tab
+  const tab = (['parties', 'ledger', 'messages', 'audit'].includes(params.get('tab') ?? '') ? params.get('tab') : 'parties') as Tab
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true })
   const [copied, setCopied] = useState(false)
 
@@ -533,12 +537,13 @@ export function PaymentDetailPage() {
           tabs={[
             { id: 'parties', label: 'Parties', count: p.instructedAgentBic && p.instructedAgentBic !== p.creditorAgentBic ? 6 : 5 },
             { id: 'ledger', label: 'Ledger postings', count: entries.reduce((n, e) => n + e.postings.length, 0) },
-            { id: 'messages', label: 'Messages', count: 'M4', disabled: true, title: 'pacs.008 / pacs.002 / pacs.004 arrive with messaging (M4)' },
+            { id: 'messages', label: 'Messages', count: messages.length },
             { id: 'audit', label: 'Audit log', count: data.history.length + entries.length },
           ]}
         />
         {tab === 'parties' && <Parties p={p} />}
         {tab === 'ledger' && <LedgerPostings p={p} entries={entries} tz={tz} />}
+        {tab === 'messages' && <MessagesPanel uetr={p.uetr} tz={tz} />}
         {tab === 'audit' && <AuditLog history={data.history} entries={entries} tz={tz} />}
       </Card>
     </>

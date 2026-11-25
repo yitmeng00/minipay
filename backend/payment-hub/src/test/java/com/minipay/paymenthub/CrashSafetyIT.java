@@ -72,6 +72,9 @@ class CrashSafetyIT extends PaymentHubIntegrationTest {
     @Autowired
     ObjectMapper json;
 
+    @Autowired
+    com.minipay.messaging.api.MessagingApi messaging;
+
     // ------------------------------------------------------------------ pipeline crashes
 
     @Test
@@ -165,6 +168,34 @@ class CrashSafetyIT extends PaymentHubIntegrationTest {
         assertThat(sent.valueDate()).isEqualTo(java.time.LocalDate.of(2026, 11, 24)); // the booked one, not tomorrow
         assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType)
                 .containsExactly(EntryType.RESERVE, EntryType.RELEASE, EntryType.SETTLE);
+    }
+
+    @Test
+    void racing_workers_send_one_pacs008_per_payment() throws Exception {
+        PaymentView p = hub.create(withDate(payment(customer("EUR", "1000.00"), "100.00", ChargeBearer.SHAR),
+                java.time.LocalDate.of(2026, 11, 25))).value();
+        clock.advance(Duration.ofDays(1));
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<?>> runs = new ArrayList<>();
+        try {
+            for (int i = 0; i < 10; i++) {
+                runs.add(pool.submit(() -> {
+                    go.await();
+                    processor.process(p.id());
+                    return null;
+                }));
+            }
+            go.countDown();
+            for (Future<?> f : runs) {
+                f.get(60, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdown();
+            clock.advance(Duration.ofDays(-1));
+        }
+        assertThat(hub.get(p.uetr()).payment().status()).isEqualTo(PaymentStatus.SENT);
+        assertThat(messaging.forUetr(p.uetr())).hasSize(1); // one payment, one message on the wire
     }
 
     // ------------------------------------------------------------------ outbox

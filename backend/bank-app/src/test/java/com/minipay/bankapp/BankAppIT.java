@@ -100,6 +100,14 @@ class BankAppIT {
                 .andExpect(jsonPath("$.valueDate").value("2026-11-24"))
                 .andExpect(jsonPath("$.chargesAmount.amount").value("20.00"));
         assertThat(ledger.checkIntegrity().ok()).isTrue();
+        // ... and the pacs.008 that left the bank, stored with its parsed fields.
+        String uetr = com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/payments").param("q", "Harlow"))
+                .andReturn().getResponse().getContentAsString(), "$.items[0].uetr");
+        mvc.perform(get("/api/messages").param("uetr", uetr))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].type").value("PACS_008"))
+                .andExpect(jsonPath("$[0].receiverBic").value("MNPBDEFFXXX"))
+                .andExpect(jsonPath("$[0].msgId").value(org.hamcrest.Matchers.startsWith("MNPA20261124-008-")));
     }
 
     @Test
@@ -129,6 +137,8 @@ class BankAppIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/api/ledger/reservations']").exists())
                 .andExpect(jsonPath("$.paths['/api/payments']").exists())
-                .andExpect(jsonPath("$.paths['/api/refdata/routing-rules']").exists());
+                .andExpect(jsonPath("$.paths['/api/refdata/routing-rules']").exists())
+                .andExpect(jsonPath("$.paths['/api/messages/{id}/mt103']").exists())
+                .andExpect(jsonPath("$.paths['/api/payments/inbound']").exists());
     }
 }

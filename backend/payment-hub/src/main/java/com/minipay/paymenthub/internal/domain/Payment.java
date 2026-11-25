@@ -95,6 +95,12 @@ public class Payment {
     @Column(name = "value_date")
     private LocalDate valueDate;
 
+    @Column(name = "execution_date")
+    private LocalDate executionDate;
+
+    @Column(name = "routing_rule_id")
+    private String routingRuleId;
+
     @Column(name = "rejection_reason")
     private String rejectionReason;
 
@@ -170,10 +176,16 @@ public class Payment {
         interbankSettlementAmount = interbankAmount;
     }
 
-    public void routed(String nextAgentBic, long settlementAccount, LocalDate settlementDate) {
+    /** Validation fixed the business day we execute on (the requested date, or the next business day). */
+    public void executeOn(LocalDate date) {
+        executionDate = date;
+    }
+
+    public void routed(String nextAgentBic, long settlementAccount, LocalDate settlementDate, String ruleId) {
         instructedAgentBic = nextAgentBic;
         settlementAccountId = settlementAccount;
         valueDate = settlementDate;
+        routingRuleId = ruleId;
     }
 
     public void debtorName(String name) {
@@ -205,6 +217,9 @@ public class Payment {
     public String remittanceInfo() { return remittanceInfo; }
     public LocalDate requestedExecDate() { return requestedExecDate; }
     public LocalDate valueDate() { return valueDate; }
+    /** Falls back to the requested date for a payment that has not been validated yet. */
+    public LocalDate executionDate() { return executionDate != null ? executionDate : requestedExecDate; }
+    public String routingRuleId() { return routingRuleId; }
     public String rejectionReason() { return rejectionReason; }
     public String rejectionDetail() { return rejectionDetail; }
     public UUID reservationId() { return reservationId; }

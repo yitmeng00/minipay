@@ -28,6 +28,7 @@
   --err-fg: #ae2116;
   --err: #d93a2e;
   --on-accent: #ffffff;
+  --track: #eef0f3;
   color-scheme: light;
 }
 
@@ -54,6 +55,7 @@
   --err-fg: #ff9191;
   --err: #ef5a4e;
   --on-accent: #0b0e13;
+  --track: #1f2630;
   color-scheme: dark;
 }
 
@@ -70,6 +72,7 @@
   --color-accent: var(--accent);
   --color-accent-bg: var(--accent-bg);
   --color-on-accent: var(--on-accent);
+  --color-track: var(--track);
   --color-ok: var(--ok);
   --color-ok-bg: var(--ok-bg);
   --color-ok-fg: var(--ok-fg);
@@ -371,5 +374,73 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* ---- IBAN structure (design: .seggrid, .sg, .s-*) */
+  .seggrid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .sg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .sg .v {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 6px 8px;
+    border-radius: 5px;
+    letter-spacing: 0.06em;
+  }
+  .sg .k {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .s-cc {
+    background: var(--info-bg);
+    color: var(--info-fg);
+  }
+  .s-ck {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+  }
+  .s-bk {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+  }
+  .s-br {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+  .s-ac {
+    background: var(--surface2);
+    color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  .s-nk {
+    background: var(--err-bg);
+    color: var(--err-fg);
+  }
+
+  /* ---- Hourly throughput bars (design: .bar) */
+  .bar {
+    flex: 1 1 0;
+    border-radius: 3px 3px 0 0;
+    background: var(--accent);
+    min-width: 0;
+  }
+  .bar.partial {
+    opacity: 0.45;
+  }
+  .bar.future {
+    background: transparent;
   }
 }

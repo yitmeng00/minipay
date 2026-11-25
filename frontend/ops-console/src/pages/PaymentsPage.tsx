@@ -1,6 +1,6 @@
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Card, Chip, Segmented, Tabs } from '../components/ui'
 import { usePayments, useStatusCounts, type PaymentFilters } from '../lib/api'
 import { useBank } from '../lib/banks'
@@ -76,7 +76,7 @@ const columns = col.columns([
           <div className="mt-0.5 max-w-[150px] text-[11px] whitespace-normal text-muted">{reasonText(c.row.original.rejectionReason)}</div>
         )}
         {c.getValue() === 'FUNDS_RESERVED' && (
-          <div className="mt-0.5 max-w-[150px] text-[11px] whitespace-normal text-muted">Warehoused · due {c.row.original.requestedExecutionDate}</div>
+          <div className="mt-0.5 max-w-[150px] text-[11px] whitespace-normal text-muted">Warehoused · executes {c.row.original.executionDate}</div>
         )}
       </>
     ),
@@ -99,7 +99,9 @@ type Ccy = 'all' | 'EUR' | 'GBP' | 'MYR' | 'USD'
 export function PaymentsPage() {
   const { bank } = useBank()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('all')
+  const [searchParams] = useSearchParams()
+  // Deep links (e.g. from an Overview alert) can open a status tab: /payments?tab=rejected
+  const [tab, setTab] = useState(() => (STATUS_TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab')! : 'all'))
   const [dir, setDir] = useState<Dir>('all')
   const [ccy, setCcy] = useState<Ccy>('all')
   const [from, setFrom] = useState('')

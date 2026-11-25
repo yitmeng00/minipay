@@ -47,6 +47,12 @@ class BankAppIT {
         KafkaContainer kafka() {
             return new KafkaContainer("apache/kafka:4.0.0");
         }
+
+        /** Tuesday 24 Nov 2026, 10:00 in Kuala Lumpur: a business day before every cut-off, whatever day the build runs. */
+        @Bean
+        java.time.Clock clock() {
+            return java.time.Clock.fixed(java.time.Instant.parse("2026-11-24T02:00:00Z"), java.time.ZoneOffset.UTC);
+        }
     }
 
     @Autowired
@@ -90,8 +96,27 @@ class BankAppIT {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SENT"))
                 .andExpect(jsonPath("$.instructedAgentBic").value("MNPBDEFFXXX"))
+                .andExpect(jsonPath("$.routingRuleId").value("R-003")) // Bank C in EUR: serial via Bank B
+                .andExpect(jsonPath("$.valueDate").value("2026-11-24"))
                 .andExpect(jsonPath("$.chargesAmount.amount").value("20.00"));
         assertThat(ledger.checkIntegrity().ok()).isTrue();
+    }
+
+    @Test
+    void seeds_bank_a_routing_table_and_routes_by_value_date() throws Exception {
+        mvc.perform(get("/api/refdata/routing-rules"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(12));
+        // Paris in EUR: serial via Bank B until 30 Nov, cover from 1 Dec (R-005 → R-006).
+        mvc.perform(get("/api/refdata/routes").param("bic", "MNPEFRPPXXX").param("currency", "EUR").param("date", "2026-11-30"))
+                .andExpect(jsonPath("$.route.rule.ruleId").value("R-005"))
+                .andExpect(jsonPath("$.route.instructedAgentBic").value("MNPBDEFFXXX"));
+        mvc.perform(get("/api/refdata/routes").param("bic", "MNPEFRPPXXX").param("currency", "EUR").param("date", "2026-12-01"))
+                .andExpect(jsonPath("$.route.rule.ruleId").value("R-006"))
+                .andExpect(jsonPath("$.route.instructedAgentBic").value("MNPEFRPPXXX"));
+        // Any other Malaysian bank in MYR: through RENTAS.
+        mvc.perform(get("/api/refdata/routes").param("bic", "MNPMMYKLXXX").param("currency", "MYR"))
+                .andExpect(jsonPath("$.route.rule.method").value("RTGS"));
     }
 
     @Test
@@ -103,6 +128,7 @@ class BankAppIT {
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/api/ledger/reservations']").exists())
-                .andExpect(jsonPath("$.paths['/api/payments']").exists());
+                .andExpect(jsonPath("$.paths['/api/payments']").exists())
+                .andExpect(jsonPath("$.paths['/api/refdata/routing-rules']").exists());
     }
 }

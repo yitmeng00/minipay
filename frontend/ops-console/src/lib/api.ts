@@ -4,7 +4,12 @@ import type {
   Account,
   AccountType,
   BankInfo,
+  BicEntry,
   ChargeBearer,
+  Cutoff,
+  DailyOverview,
+  Holiday,
+  IbanCheck,
   IntegrityReport,
   JournalEntry,
   Money,
@@ -12,7 +17,13 @@ import type {
   Payment,
   PaymentDetail,
   PaymentStatus,
+  RefDataSummary,
+  Release,
+  RouteResolution,
+  RoutingRule,
+  Scheme,
   Statement,
+  ValueDating,
 } from './types'
 
 /** RFC 9457 problem details from the backend, with the ISO reason code when there is one. */
@@ -199,5 +210,112 @@ export function useNetworkEvent(uetr: string) {
     mutationFn: ({ body, key }: { body: NetworkEventBody; key: string }) =>
       postJson<Payment>(`/${bank.id}/api/payments/${uetr}/network-events`, body, key),
     onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id] }),
+  })
+}
+
+export function useOverview() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'payments', 'overview'],
+    queryFn: () => getJson<DailyOverview>(`/${bank.id}/api/payments/overview`),
+    refetchInterval: 10_000,
+  })
+}
+
+// ---------------------------------------------------------------- reference data
+// Every lookup is "as of" a date; without one the backend uses the bank's business date.
+
+const asOf = (date?: string) => (date ? `?date=${date}` : '')
+
+export function useRefDataSummary() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'summary'],
+    queryFn: () => getJson<RefDataSummary>(`/${bank.id}/api/refdata`),
+  })
+}
+
+export function useBicDirectory(date?: string) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'bics', date ?? 'today'],
+    queryFn: () => getJson<BicEntry[]>(`/${bank.id}/api/refdata/bics${asOf(date)}`),
+    staleTime: 60_000,
+  })
+}
+
+export function useIbanCheck(iban: string, date?: string) {
+  const { bank } = useBank()
+  const clean = iban.replace(/\s+/g, '').toUpperCase()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'iban', clean, date ?? 'today'],
+    queryFn: () => getJson<IbanCheck>(`/${bank.id}/api/refdata/iban/${encodeURIComponent(clean)}${asOf(date)}`),
+    enabled: clean.length > 0,
+    placeholderData: (prev) => prev,
+    staleTime: 60_000,
+  })
+}
+
+export function useRoutingRules() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'routing-rules'],
+    queryFn: () => getJson<RoutingRule[]>(`/${bank.id}/api/refdata/routing-rules`),
+  })
+}
+
+export function useRoute(bic: string, currency: string, date?: string) {
+  const { bank } = useBank()
+  const params = new URLSearchParams({ bic, currency })
+  if (date) params.set('date', date)
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'route', params.toString()],
+    queryFn: () => getJson<RouteResolution>(`/${bank.id}/api/refdata/routes?${params}`),
+    enabled: /^[A-Z0-9]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(bic) && /^[A-Z]{3}$/.test(currency),
+    placeholderData: (prev) => prev,
+    retry: false,
+  })
+}
+
+export function useReleases() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'releases'],
+    queryFn: () => getJson<Release[]>(`/${bank.id}/api/refdata/releases`),
+  })
+}
+
+export function useCutoffs() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'cutoffs'],
+    queryFn: () => getJson<Cutoff[]>(`/${bank.id}/api/refdata/cutoffs`),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useSchemes() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'schemes'],
+    queryFn: () => getJson<Scheme[]>(`/${bank.id}/api/refdata/schemes`),
+  })
+}
+
+export function useHolidays(from?: string) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'holidays', from ?? 'today'],
+    queryFn: () => getJson<Holiday[]>(`/${bank.id}/api/refdata/holidays${from ? `?from=${from}` : ''}`),
+  })
+}
+
+export function useValueDate(currency: string | undefined, date: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'refdata', 'value-date', currency, date],
+    queryFn: () => getJson<ValueDating>(`/${bank.id}/api/refdata/value-date?currency=${currency}${date ? `&date=${date}` : ''}`),
+    enabled: !!currency,
+    retry: false,
   })
 }

@@ -21,9 +21,9 @@
     <modules>
         <module>common</module>
         <module>ledger</module>
+        <module>refdata</module>
         <module>payment-hub</module>
         <module>messaging</module>
-        <module>refdata</module>
         <module>compliance</module>
         <module>settlement</module>
         <module>recon</module>
@@ -50,6 +50,11 @@
             <dependency>
                 <groupId>com.minipay</groupId>
                 <artifactId>ledger</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.minipay</groupId>
+                <artifactId>refdata</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

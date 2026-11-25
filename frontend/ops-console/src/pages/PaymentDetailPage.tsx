@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Tabs, type Tone } from '../components/ui'
-import { ApiError, useAccounts, useBankInfo, useNetworkEvent, usePayment, usePaymentEntries } from '../lib/api'
+import { ApiError, useAccounts, useBankInfo, useBicDirectory, useNetworkEvent, usePayment, usePaymentEntries } from '../lib/api'
 import { BANKS } from '../lib/banks'
 import { CHARGE_BEARER, REASON, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
 import { formatAmount, formatMoney } from '../lib/money'
@@ -176,10 +176,17 @@ function SimulateNetwork({ p }: { p: Payment }) {
 // ---------------------------------------------------------------- tabs
 
 function Parties({ p }: { p: Payment }) {
-  const us = bankName(p.debtorAgentBic)
-  const cAgent = bankName(p.creditorAgentBic)
+  // Names come from the BIC directory as of the value date; the three simulated banks are the fallback.
+  const directory = useBicDirectory(p.valueDate ?? p.executionDate).data ?? []
+  const named = (bic: string | null) => {
+    if (!bic) return undefined
+    const d = directory.find((e) => e.bic === bic) ?? directory.find((e) => e.bic.slice(0, 8) === bic.slice(0, 8))
+    return d ? { name: d.institutionName, city: d.city } : bankName(bic)
+  }
+  const us = named(p.debtorAgentBic)
+  const cAgent = named(p.creditorAgentBic)
   const instructed = p.instructedAgentBic && p.instructedAgentBic.slice(0, 8) !== p.creditorAgentBic.slice(0, 8)
-    ? bankName(p.instructedAgentBic)
+    ? named(p.instructedAgentBic)
     : undefined
   const cards: { role: string; tag: string; name: string; rows: [string, string, boolean?][] }[] = [
     { role: 'Debtor', tag: 'Dbtr', name: p.debtorName, rows: [['Account', p.debtorAccount, true]] },
@@ -194,7 +201,10 @@ function Parties({ p }: { p: Payment }) {
           role: 'Intermediary · instructed agent',
           tag: 'InstdAgt',
           name: `${instructed.name} · ${instructed.city}`,
-          rows: [['BIC', p.instructedAgentBic, true], ['Relationship', 'Our correspondent (we hold a nostro there)']] as [string, string, boolean?][],
+          rows: [
+            ['BIC', p.instructedAgentBic, true],
+            ['Relationship', `Our correspondent · routed by ${p.routingRuleId ?? '—'}`],
+          ] as [string, string, boolean?][],
         }]
       : []),
     {
@@ -475,7 +485,13 @@ export function PaymentDetailPage() {
           <div>
             <dt className="lbl">Value date</dt>
             <dd className="mono mt-[3px] mb-0 ml-0">
-              {p.valueDate ?? <span className="text-muted">requested {p.requestedExecutionDate}</span>}
+              {p.valueDate ?? <span className="text-muted">executes {p.executionDate}</span>}
+              {p.executionDate !== p.requestedExecutionDate && (
+                <span className="text-muted" title="The requested date was not a business day of the currency's calendar">
+                  {' '}
+                  · requested {p.requestedExecutionDate}
+                </span>
+              )}
             </dd>
           </div>
           <div>
@@ -486,7 +502,15 @@ export function PaymentDetailPage() {
           </div>
           <div>
             <dt className="lbl">Next agent</dt>
-            <dd className="mono mt-[3px] mb-0 ml-0">{p.instructedAgentBic ?? <span className="text-muted">— not routed</span>}</dd>
+            <dd className="mono mt-[3px] mb-0 ml-0">
+              {p.instructedAgentBic ?? <span className="text-muted">— not routed</span>}
+              {p.routingRuleId && (
+                <Link to="/reference-data#routing" className="text-muted no-underline" title="Routing rule that chose this route">
+                  {' '}
+                  · {p.routingRuleId}
+                </Link>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="lbl">Our charges · interbank</dt>

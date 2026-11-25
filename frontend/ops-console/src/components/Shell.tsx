@@ -14,7 +14,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Monitor',
     items: [
-      { label: 'Overview', icon: Icons.overview, milestone: 'M3' },
+      { label: 'Overview', icon: Icons.overview, to: '/overview' },
       { label: 'Payments', icon: Icons.payments, to: '/payments' },
       { label: 'Sanctions queue', icon: Icons.sanctions, milestone: 'M6' },
       { label: 'Settlement', icon: Icons.settlement, milestone: 'M7' },
@@ -26,7 +26,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     items: [
       { label: 'Create payment', icon: Icons.create, to: '/payments/new' },
       { label: 'Accounts & ledger', icon: Icons.ledger, to: '/accounts' },
-      { label: 'Reference data', icon: Icons.refdata, milestone: 'M3' },
+      { label: 'Reference data', icon: Icons.refdata, to: '/reference-data' },
     ],
   },
 ]

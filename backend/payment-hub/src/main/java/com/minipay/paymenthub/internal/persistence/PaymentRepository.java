@@ -21,11 +21,16 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     @Query(value = "SELECT nextval('payment.instruction_seq')", nativeQuery = true)
     long nextInstructionSeq();
 
-    /** Payments the recovery sweeper should push on: stuck mid-pipeline, or warehoused and now due. */
+    /**
+     * Payments the recovery sweeper should push on: stuck mid-pipeline (untouched for a while before
+     * FUNDS_RESERVED), or reserved and due (execution date reached). A warehoused payment waiting
+     * for a later date is neither, so it does not take up a place in every sweep.
+     */
     @Query("""
             SELECT p.id FROM Payment p
              WHERE p.status IN :inFlight
-               AND (p.updatedAt < :staleBefore OR (p.status = :reserved AND p.requestedExecDate <= :today))
+               AND ((p.status <> :reserved AND p.updatedAt < :staleBefore)
+                    OR (p.status = :reserved AND p.executionDate <= :today))
              ORDER BY p.createdAt
             """)
     List<UUID> findResumable(@Param("inFlight") Collection<PaymentStatus> inFlight,

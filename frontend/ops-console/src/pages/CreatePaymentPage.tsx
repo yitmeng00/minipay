@@ -1,11 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Segmented } from '../components/ui'
-import { ApiError, newIdempotencyKey, useAccounts, useBankInfo, useCreatePayment } from '../lib/api'
-import { BANKS, useBank } from '../lib/banks'
-import { BIC_RE, CHARGE_BEARER, STATUS_TONE, formatIban, ibanCheck, reasonText } from '../lib/iso'
+import {
+  ApiError,
+  newIdempotencyKey,
+  useAccounts,
+  useBankInfo,
+  useBicDirectory,
+  useCreatePayment,
+  useIbanCheck,
+  useRoute,
+  useValueDate,
+} from '../lib/api'
+import { useBank } from '../lib/banks'
+import { BIC_RE, CHARGE_BEARER, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
 import { formatMoney } from '../lib/money'
-import type { Account, ChargeBearer, Payment } from '../lib/types'
+import type { Account, BicEntry, ChargeBearer, Payment } from '../lib/types'
+
+const NO_BICS: BicEntry[] = []
 
 type Form = {
   debtorAccount: string
@@ -93,26 +105,67 @@ export function CreatePaymentPage() {
   }
   const debtor = customers.find((a) => a.accountNumber === f?.debtorAccount)
 
+  // Reference data, as of the requested date: the same lookups the VALIDATED step makes (ADR-004).
+  const bicU = (f?.creditorAgentBic ?? '').trim().toUpperCase()
+  const bic11 = bicU.length === 8 ? bicU + 'XXX' : bicU
+  const asOf = f?.valueDate && f.valueDate >= businessDate ? f.valueDate : businessDate
+  const directory = useBicDirectory(asOf || undefined).data ?? NO_BICS
+  const looksIban = /^[A-Za-z]{2}\d{2}/.test((f?.creditorAccount ?? '').trim())
+  const iban = useIbanCheck(looksIban ? f?.creditorAccount ?? '' : '', asOf || undefined).data
+  const dating = useValueDate(debtor?.currency, asOf || undefined)
+  const route = useRoute(bic11, debtor?.currency ?? '', dating.data?.valueDate).data
+
   const checks = useMemo(() => {
     if (!f) return []
-    const iban = ibanCheck(f.creditorAccount)
-    const looksIban = /^[A-Za-z]{2}/.test(f.creditorAccount.trim())
-    const bicOk = BIC_RE.test(f.creditorAgentBic)
-    const known = BANKS.find((b) => b.bic.slice(0, 8) === f.creditorAgentBic.slice(0, 8))
+    const entry = directory.find((d) => d.bic === bic11)
     const amountOk = /^\d+(\.\d{1,2})?$/.test(f.amount) && !/^0+(\.0+)?$/.test(f.amount)
     const funds = amountOk && debtor ? lessOrEqual(f.amount, debtor.available.amount) : false
+    const ibanFail = iban?.checks.find((c) => c.outcome === 'FAIL')
+    const ibanOtherBank = iban?.valid && iban.bic && entry && iban.bic.slice(0, 8) !== entry.bic.slice(0, 8)
     return [
       { label: 'Creditor name present', ok: f.creditorName.trim().length > 0, detail: `${f.creditorName.length} of 140 characters` },
       {
         label: 'IBAN structure & check digits',
-        ok: looksIban ? iban.ok : f.creditorAccount.trim().length > 0,
-        detail: looksIban ? iban.msg : 'Not an IBAN — domestic account number',
+        ok: looksIban ? !!iban?.valid : f.creditorAccount.trim().length > 0,
+        warn: !looksIban && f.creditorAccount.trim().length > 0,
+        detail: !looksIban
+          ? 'Not an IBAN — fine for a domestic account, AC03 if the creditor agent\'s country uses IBANs'
+          : !iban
+            ? 'Checking…'
+            : iban.valid
+              ? `Valid ${iban.countryCode} IBAN · mod-97 remainder 1`
+              : `${ibanFail?.name}: ${ibanFail?.detail} — will be REJECTED AC03`,
       },
       {
-        label: 'BIC format',
-        ok: bicOk,
-        warn: bicOk && !known,
-        detail: bicOk ? (known ? `${known.name} · ${known.city}` : 'Valid format, unknown institution (directory in M3)') : 'Not ISO 9362',
+        label: 'BIC known & connected',
+        ok: !!entry,
+        warn: !!entry && entry.connectivity !== 'CONNECTED',
+        detail: !BIC_RE.test(bicU)
+          ? 'Not ISO 9362 — RC01'
+          : !entry
+            ? `Not in the BIC directory on ${asOf} — will be REJECTED RC01`
+            : `${entry.institutionName} · ${entry.city}${entry.connectivity !== 'CONNECTED' ? ` · ${entry.connectivity.replace('_', ' ').toLowerCase()} (only via a correspondent)` : ''}`,
+      },
+      {
+        label: 'IBAN belongs to the creditor agent',
+        ok: !ibanOtherBank,
+        warn: looksIban && !!iban?.valid && !iban.bic,
+        detail: !looksIban || !iban?.valid
+          ? '—'
+          : ibanOtherBank
+            ? `Bank code ${iban.bankId} is ${iban.bic}, not ${bic11} — will be REJECTED AC03`
+            : iban.bic
+              ? `Bank code ${iban.bankId} → ${iban.bic}`
+              : `Bank code ${iban.bankId} not in the IBAN-to-BIC map (not checked)`,
+      },
+      {
+        label: 'Route',
+        ok: !!route?.route,
+        detail: !route
+          ? '—'
+          : route.route
+            ? `${route.route.rule.ruleId} · ${route.route.rule.method}${route.route.rule.nextHopBic ? ` via ${route.route.rule.nextHopBic}` : ''} → instructed agent ${route.route.instructedAgentBic}`
+            : `${route.problem} — will be REJECTED CNOR`,
       },
       {
         label: 'Amount & funds',
@@ -126,13 +179,22 @@ export function CreatePaymentPage() {
       },
       {
         label: 'Value date',
-        ok: !!f.valueDate && f.valueDate >= businessDate,
-        warn: f.valueDate > businessDate,
-        detail: f.valueDate > businessDate ? 'Future date — will be warehoused at FUNDS_RESERVED' : f.valueDate < businessDate ? 'In the past — DT01' : 'Today',
+        ok: !!f.valueDate && f.valueDate >= businessDate && !dating.isError,
+        warn: f.valueDate > businessDate || !!dating.data?.reasons.length,
+        detail:
+          f.valueDate < businessDate
+            ? 'In the past — DT01'
+            : dating.isError
+              ? `${debtor?.currency} has no settlement scheme — AM03`
+              : !dating.data
+                ? '—'
+                : `Settles ${dating.data.valueDate} via ${dating.data.schemeName}` +
+                  (dating.data.reasons.length ? ` (${dating.data.reasons[dating.data.reasons.length - 1]})` : '') +
+                  (f.valueDate > businessDate ? ' · warehoused at FUNDS_RESERVED until then' : ''),
       },
       { label: 'Remittance length', ok: f.remittance.length <= 140, detail: `${f.remittance.length} of 140 characters` },
     ]
-  }, [f, debtor, businessDate])
+  }, [f, debtor, businessDate, directory, bic11, bicU, asOf, looksIban, iban, route, dating.data, dating.isError])
 
   if (!f) return <div className="text-muted">Loading accounts…</div>
 
@@ -260,7 +322,7 @@ export function CreatePaymentPage() {
                 onChange={(e) => set('creditorAccount', e.target.value)}
                 onBlur={() => /^[A-Za-z]{2}\d{2}/.test(f.creditorAccount) && set('creditorAccount', formatIban(f.creditorAccount))}
               />
-              <span className="hint">Spaces are ignored. Server-side IBAN validation per country arrives with reference data (M3).</span>
+              <span className="hint">Spaces are ignored. Checked against the IBAN registry: length, BBAN structure, mod-97 and bank code.</span>
             </div>
             <div className="field col-span-2">
               <label htmlFor="bic">Creditor agent BIC</label>
@@ -275,11 +337,13 @@ export function CreatePaymentPage() {
                   onChange={(e) => set('creditorAgentBic', e.target.value.toUpperCase())}
                 />
                 <datalist id="known-bics">
-                  {BANKS.filter((b) => b.bic !== bank.bic).map((b) => (
-                    <option key={b.bic} value={b.bic}>
-                      {b.name} · {b.city}
-                    </option>
-                  ))}
+                  {directory
+                    .filter((d) => d.bic.slice(0, 8) !== bank.bic.slice(0, 8))
+                    .map((d) => (
+                      <option key={d.bic} value={d.bic}>
+                        {d.institutionName} · {d.city}
+                      </option>
+                    ))}
                 </datalist>
                 <span className="text-xs text-muted">{checks[2]?.detail}</span>
               </div>
@@ -310,7 +374,9 @@ export function CreatePaymentPage() {
             <div className="field">
               <label htmlFor="vdate">Requested execution date</label>
               <input id="vdate" type="date" className="input mono" min={businessDate} value={f.valueDate} onChange={(e) => set('valueDate', e.target.value)} />
-              <span className="hint">Business date {businessDate} · cut-offs arrive with M3</span>
+              <span className="hint">
+                Business date {businessDate} · weekends, holidays and the {dating.data?.schemeName ?? 'scheme'} cut-off move the value date
+              </span>
             </div>
             <div className="field col-span-2">
               <span className="flabel" id="chrg-l">

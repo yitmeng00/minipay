@@ -9,6 +9,7 @@ import com.minipay.ledger.api.LedgerApi;
 import com.minipay.ledger.api.PostEntryCommand;
 import com.minipay.ledger.api.PostingLine;
 import com.minipay.paymenthub.api.CreatePaymentCommand;
+import com.minipay.paymenthub.api.DailyOverview;
 import com.minipay.paymenthub.api.NetworkEvent;
 import com.minipay.paymenthub.api.PageView;
 import com.minipay.paymenthub.api.PaymentDetailView;
@@ -19,6 +20,7 @@ import com.minipay.paymenthub.api.PaymentQuery;
 import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.api.PaymentView;
 import com.minipay.paymenthub.api.Replayable;
+import com.minipay.paymenthub.internal.config.PaymentHubProperties;
 import com.minipay.paymenthub.internal.domain.IdempotencyRecord;
 import com.minipay.paymenthub.internal.domain.Payment;
 import com.minipay.paymenthub.internal.domain.PaymentStateMachine;
@@ -26,14 +28,17 @@ import com.minipay.paymenthub.internal.persistence.IdempotencyRecordRepository;
 import com.minipay.paymenthub.internal.persistence.PaymentRepository;
 import com.minipay.paymenthub.internal.persistence.PaymentSpecifications;
 import com.minipay.paymenthub.internal.persistence.PaymentStateHistoryRepository;
+import com.minipay.paymenthub.internal.persistence.PaymentStatistics;
 import com.minipay.paymenthub.internal.processing.PaymentMapper;
 import com.minipay.paymenthub.internal.processing.PaymentProcessor;
-import com.minipay.paymenthub.internal.processing.PaymentTransitions;
 import com.minipay.paymenthub.internal.processing.PaymentTransitions.Change;
+import com.minipay.paymenthub.internal.processing.PaymentTransitions;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.EnumMap;
 import java.util.HexFormat;
@@ -52,6 +57,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -70,11 +76,19 @@ public class PaymentService implements PaymentHubApi {
     private final TransactionTemplate tx;
     private final Clock clock;
     private final String bankBic;
+    private final PaymentStatistics statistics;
+    private final PaymentHubProperties props;
+    private final ZoneId bankZone;
 
     public PaymentService(PaymentRepository payments, PaymentStateHistoryRepository history,
                           IdempotencyRecordRepository idempotency, PaymentTransitions transitions,
                           PaymentProcessor processor, LedgerApi ledger, PlatformTransactionManager txManager,
-                          ObjectProvider<Clock> clock, @Value("${minipay.bank.bic}") String bankBic) {
+                          ObjectProvider<Clock> clock, @Value("${minipay.bank.bic}") String bankBic,
+                          PaymentStatistics statistics, PaymentHubProperties props,
+                          @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone) {
+        this.statistics = statistics;
+        this.props = props;
+        this.bankZone = bankZone;
         this.payments = payments;
         this.history = history;
         this.idempotency = idempotency;
@@ -245,6 +259,13 @@ public class PaymentService implements PaymentHubApi {
             counts.put((PaymentStatus) row[0], (Long) row[1]);
         }
         return counts;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DailyOverview overview(LocalDate date) {
+        return statistics.overview(date != null ? date : processor.businessDate(), bankZone, clock.instant(),
+                props.sentStuckAfter());
     }
 
     // =================================================================== helpers

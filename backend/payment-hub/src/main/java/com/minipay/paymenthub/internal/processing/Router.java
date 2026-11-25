@@ -1,66 +1,81 @@
 package com.minipay.paymenthub.internal.processing;
 
-import com.minipay.common.id.Bic;
 import com.minipay.ledger.api.AccountStatus;
 import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.AccountView;
 import com.minipay.ledger.api.LedgerApi;
-import java.util.List;
+import com.minipay.refdata.api.RefDataApi;
+import com.minipay.refdata.api.RouteResolution;
+import com.minipay.refdata.api.RoutingMethod;
+import com.minipay.refdata.api.RoutingRuleView;
+import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 
 /**
- * Decides which account we settle through and which bank we send the payment to next.
+ * Decides which account we settle on and which bank receives our message, using the effective-dated
+ * routing rules in reference data (M3, ADR-004) as of the payment's <b>value date</b>.
  *
- * <p>Interim rules until M3 brings effective-dated routing tables:
- * <ol>
- *   <li>The creditor's bank holds a <b>vostro</b> with us in this currency → credit that vostro and send
- *       straight to them. ("We pay them on our own books.")</li>
- *   <li>We hold a <b>nostro</b> at the creditor's bank in this currency → credit the nostro, send to them.</li>
- *   <li>Otherwise, our single <b>nostro</b> in this currency is our correspondent for it → credit it and
- *       send to that correspondent, who passes the payment on (serial method).</li>
- *   <li>No account in the currency → no route (ISO CNOR, "creditor bank is not registered").</li>
- * </ol>
- * BICs are compared on their first 8 characters: the branch does not change the institution.
+ * <p>Reference data names the settlement account by number; it does not read the ledger. The hub
+ * resolves the number here and checks that the account can carry the payment: it must be ours (NOSTRO
+ * or VOSTRO), ACTIVE, and in the payment's currency. A rule pointing at an unusable account is a data
+ * error and gives no route (CNOR), rather than a booking on the wrong account.
  */
 @Component
 public class Router {
 
-    public record Route(long settlementAccountId, String settlementAccountNumber, String nextAgentBic, String method) {
+    /**
+     * @param instructedAgentBic who receives our pacs.008 (InstdAgt)
+     * @param nextHopBic         the correspondent for SERIAL and COVER routes, else null
+     */
+    public record Route(String ruleId, String releaseVersion, RoutingMethod method, long settlementAccountId,
+                        String settlementAccountNumber, String instructedAgentBic, String nextHopBic) {
+
+        public String describe() {
+            return ruleId + " (" + releaseVersion + ", " + method + ")";
+        }
     }
 
+    /** A route, or why there is none. */
+    public record Outcome(Optional<Route> route, String problem) {
+    }
+
+    private final RefDataApi refdata;
     private final LedgerApi ledger;
 
-    public Router(LedgerApi ledger) {
+    public Router(RefDataApi refdata, LedgerApi ledger) {
+        this.refdata = refdata;
         this.ledger = ledger;
     }
 
-    public Optional<Route> route(String creditorAgentBic, String currency) {
-        String creditorBank = Bic.parse(creditorAgentBic).bic8();
-        Optional<AccountView> vostro = usable(AccountType.VOSTRO, currency).stream()
-                .filter(a -> Bic.parse(a.counterpartyBic()).bic8().equals(creditorBank)).findFirst();
-        if (vostro.isPresent()) {
-            return Optional.of(route(vostro.get(), "Credit to the creditor agent's vostro with us"));
+    public Outcome route(String creditorAgentBic, String currency, LocalDate valueDate) {
+        RouteResolution resolution = refdata.route(creditorAgentBic, currency, valueDate);
+        if (resolution.route().isEmpty()) {
+            return new Outcome(Optional.empty(), resolution.problem());
         }
-        List<AccountView> nostros = usable(AccountType.NOSTRO, currency);
-        Optional<AccountView> direct = nostros.stream()
-                .filter(a -> Bic.parse(a.counterpartyBic()).bic8().equals(creditorBank)).findFirst();
-        if (direct.isPresent()) {
-            return Optional.of(route(direct.get(), "Direct: our nostro at the creditor agent"));
+        RouteResolution.Route r = resolution.route().get();
+        RoutingRuleView rule = r.rule();
+        Optional<AccountView> account = ledger.findAccountByNumber(rule.settlementAccount());
+        String unusable = account.isEmpty() ? "does not exist" : unusable(account.get(), currency);
+        if (unusable != null) {
+            return new Outcome(Optional.empty(), rule.ruleId() + " settles on account " + rule.settlementAccount()
+                    + ", which " + unusable);
         }
-        if (nostros.size() == 1) {
-            return Optional.of(route(nostros.get(0), "Serial via our " + currency + " correspondent"));
-        }
-        return Optional.empty();
+        AccountView a = account.get();
+        return new Outcome(Optional.of(new Route(rule.ruleId(), rule.releaseVersion(), rule.method(), a.id(),
+                a.accountNumber(), r.instructedAgentBic(), rule.nextHopBic())), null);
     }
 
-    private Route route(AccountView a, String method) {
-        return new Route(a.id(), a.accountNumber(), a.counterpartyBic(), method);
-    }
-
-    private List<AccountView> usable(AccountType type, String currency) {
-        return ledger.listAccounts(type).stream()
-                .filter(a -> a.currency().equals(currency) && a.status() == AccountStatus.ACTIVE)
-                .toList();
+    private static String unusable(AccountView a, String currency) {
+        if (a.type() != AccountType.NOSTRO && a.type() != AccountType.VOSTRO) {
+            return "is a " + a.type() + " account, not a nostro or vostro";
+        }
+        if (!a.currency().equals(currency)) {
+            return "is in " + a.currency();
+        }
+        if (a.status() != AccountStatus.ACTIVE) {
+            return "is " + a.status();
+        }
+        return null;
     }
 }

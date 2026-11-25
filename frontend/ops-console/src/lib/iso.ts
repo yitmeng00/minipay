@@ -57,20 +57,6 @@ export const CHARGE_BEARER: Record<ChargeBearer, { short: string; long: string }
   SHAR: { short: 'Shared', long: 'debtor pays our fee, later banks deduct theirs (MT: SHA)' },
 }
 
-/** ISO 13616 check: move the first four characters to the end, letters → numbers, mod 97 must be 1. */
-export function ibanCheck(raw: string): { ok: boolean; msg: string } {
-  const iban = raw.replace(/\s+/g, '').toUpperCase()
-  if (!iban) return { ok: false, msg: 'Required' }
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(iban)) return { ok: false, msg: 'Not an IBAN shape (CC + 2 check digits + BBAN)' }
-  const rearranged = iban.slice(4) + iban.slice(0, 4)
-  let rem = 0
-  for (const ch of rearranged) {
-    const v = ch >= 'A' ? (ch.charCodeAt(0) - 55).toString() : ch
-    for (const d of v) rem = (rem * 10 + Number(d)) % 97
-  }
-  return rem === 1 ? { ok: true, msg: 'mod-97 = 1' } : { ok: false, msg: `Check digits wrong (mod-97 = ${rem})` }
-}
-
 export function formatIban(raw: string): string {
   return raw.replace(/\s+/g, '').toUpperCase().replace(/(.{4})/g, '$1 ').trim()
 }

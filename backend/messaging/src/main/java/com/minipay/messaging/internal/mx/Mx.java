@@ -91,4 +91,25 @@ public final class Mx {
             return null;
         }
     }
+
+    private static final java.util.regex.Pattern APP_HDR =
+            java.util.regex.Pattern.compile("<([A-Za-z0-9_]+:)?AppHdr[\\s>].*?</\\1?AppHdr>", java.util.regex.Pattern.DOTALL);
+
+    /**
+     * The same business message, re-addressed: a new AppHdr (from, to, created now) around the
+     * <b>unchanged</b> Document, byte for byte. This is what a V-shaped clearing system such as T2 does
+     * when it forwards a settled payment to the receiving participant (ADR-008): it is the sender's
+     * message, so the MsgId (BizMsgIdr) stays the sender's too.
+     */
+    public static String readdressed(String raw, String from, String to, MessageType type, OffsetDateTime created) {
+        AbstractMX mx = AbstractMX.parse(raw);
+        String msgId = mx.getAppHdr().reference();
+        mx.setAppHdr(header(from, to, msgId, type, created));
+        java.util.regex.Matcher fresh = APP_HDR.matcher(render(mx));
+        java.util.regex.Matcher old = APP_HDR.matcher(raw);
+        if (!fresh.find() || !old.find()) {
+            throw new IllegalStateException("No AppHdr in the business message");
+        }
+        return raw.substring(0, old.start()) + fresh.group() + raw.substring(old.end());
+    }
 }

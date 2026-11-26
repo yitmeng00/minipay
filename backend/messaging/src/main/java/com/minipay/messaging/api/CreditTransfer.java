@@ -21,6 +21,7 @@ import java.util.Objects;
  * @param coverAgentBic       for SttlmMtd COVE, the bank through which the money travels separately
  *                            (InstgRmbrsmntAgt); null otherwise
  * @param previousAgents      PrvsInstgAgt1..3: banks before the instructing agent, oldest first
+ * @param clearing            for SttlmMtd CLRG through a clearing system: which one and how; null otherwise
  */
 public record CreditTransfer(
         String uetr,
@@ -42,7 +43,25 @@ public record CreditTransfer(
         SettlementMethod settlementMethod,
         String coverAgentBic,
         List<String> previousAgents,
-        String remittanceInformation) {
+        String remittanceInformation,
+        Clearing clearing) {
+
+    /** A transfer that does not go through a clearing system. */
+    public CreditTransfer(String uetr, String instructionId, String endToEndId, String instructingAgentBic,
+                          String instructedAgentBic, String debtorAgentBic, String creditorAgentBic, String debtorName,
+                          String debtorAccount, String creditorName, String creditorAccount, Money interbankAmount,
+                          Money instructedAmount, List<Charge> charges, ChargeBearer chargeBearer, LocalDate settlementDate,
+                          SettlementMethod settlementMethod, String coverAgentBic, List<String> previousAgents,
+                          String remittanceInformation) {
+        this(uetr, instructionId, endToEndId, instructingAgentBic, instructedAgentBic, debtorAgentBic, creditorAgentBic,
+                debtorName, debtorAccount, creditorName, creditorAccount, interbankAmount, instructedAmount, charges,
+                chargeBearer, settlementDate, settlementMethod, coverAgentBic, previousAgents, remittanceInformation, null);
+    }
+
+    /** Who the message is addressed to (AppHdr/To): a clearing system's operator, or the instructed agent. */
+    public String messageReceiverBic() {
+        return clearing != null && clearing.operatorBic() != null ? clearing.operatorBic() : instructedAgentBic;
+    }
 
     public CreditTransfer {
         Objects.requireNonNull(uetr, "uetr");

@@ -58,7 +58,18 @@ public final class TransferReader {
                 sttlm.getInstgRmbrsmntAgt() != null ? Mx.bic(sttlm.getInstgRmbrsmntAgt()) : null,
                 prev,
                 tx.getRmtInf() != null && tx.getRmtInf().getUstrd() != null && !tx.getRmtInf().getUstrd().isEmpty()
-                        ? String.join(" ", tx.getRmtInf().getUstrd()) : null);
+                        ? String.join(" ", tx.getRmtInf().getUstrd()) : null,
+                clearing(sttlm, tx));
+    }
+
+    /** SttlmInf/ClrSys and PmtTpInf: which clearing system, at what priority, instant or not. Null if none. */
+    private static com.minipay.messaging.api.Clearing clearing(SettlementInstruction7 sttlm, CreditTransferTransaction39 tx) {
+        String system = sttlm.getClrSys() != null ? sttlm.getClrSys().getPrtry() : null;
+        var type = tx.getPmtTpInf();
+        String priority = type != null && type.getInstrPrty() != null ? type.getInstrPrty().name() : null;
+        boolean instant = type != null && type.getLclInstrm() != null && "INST".equals(type.getLclInstrm().getCd());
+        return system == null && priority == null && !instant ? null
+                : new com.minipay.messaging.api.Clearing(system, priority, instant, null);
     }
 
     public static CoverTransfer pacs009(MxPacs00900108 mx) {

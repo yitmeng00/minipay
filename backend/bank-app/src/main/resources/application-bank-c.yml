@@ -39,7 +39,8 @@ minipay:
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - EUR" }
       # M7: our euro accounts at the central bank (ADR-008), mirrors of the operator's RTGS-MNPCGB2L and
       # INST-MNPCGB2L. A London bank takes part in the euro systems as if through a euro-area branch.
-      - { number: 1004-EUR-T2, type: NOSTRO, currency: EUR, owner: "T2 account (central bank)", counterparty-bic: MNCBDEFFXXX }
+      # Like Bank B's 1001-EUR-T2 it may show less than zero: T2's queue decides about liquidity, not our mirror.
+      - { number: 1004-EUR-T2, type: NOSTRO, currency: EUR, owner: "T2 account (central bank)", counterparty-bic: MNCBDEFFXXX, allow-overdraft: true }
       - { number: GB23MNPC40051277330021, type: CUSTOMER, currency: EUR, owner: "Pennine Textiles Ltd (EUR)", opening-balance: 2500000.00, funded-from: 1004-EUR-T2 }
       - { number: 1005-EUR-INST, type: NOSTRO, currency: EUR, owner: "MiniPay Instant position (central bank)", counterparty-bic: MNCBDEFFXXX, opening-balance: 500000.00, funded-from: 1004-EUR-T2 }
     # Bank C's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.

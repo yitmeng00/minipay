@@ -24,7 +24,9 @@ minipay:
     enabled: true
     accounts:
       # TARGET2-style dedicated cash account at the (fictional) central bank.
-      - { number: 1001-EUR-T2, type: NOSTRO, currency: EUR, owner: "Central bank settlement account (EUR)", counterparty-bic: MNCBDEFFXXX }
+      # It may show less than zero (M7, ADR-008): it is our record of what we sent; whether there is liquidity is
+      # T2's decision, which queues a payment our balance there cannot cover yet.
+      - { number: 1001-EUR-T2, type: NOSTRO, currency: EUR, owner: "Central bank settlement account (EUR)", counterparty-bic: MNCBDEFFXXX, allow-overdraft: true }
       # Mirror of Bank A's 1101-EUR-MNPB nostro. Same balance — that is what reconciliation (M8) checks.
       - { number: DE87500100600778812003, type: VOSTRO, currency: EUR, owner: "Vostro - Bank A (EUR)", counterparty-bic: MNPAMYKLXXX, opening-balance: 2899613.17, funded-from: 1001-EUR-T2 }
       - { number: DE13500100600412280017, type: CUSTOMER, currency: EUR, owner: "Kessler Maschinenbau GmbH", opening-balance: 4812330.00, funded-from: 1001-EUR-T2 }

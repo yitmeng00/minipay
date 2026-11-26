@@ -528,6 +528,69 @@ row for the camt.053 entry and why it matched), the balance proof, and the break
 suggested resolutions. Bank B's `1001-EUR-T2` shows a DNS cycle's net entry matched against its gross
 payments (Batch).
 
+## The ops console
+
+`frontend/ops-console` (http://localhost:5173). The bank switcher at the top picks which institution's
+backend the console talks to; the person acting (for compliance decisions and break resolutions) is picked
+at the bottom of the sidebar. The screenshots come from the four instances running the sample calls below.
+
+### Overview
+Today's payments, throughput, liquidity by currency, cut-offs in local time, sanctions hits, open
+reconciliation breaks, and alerts derived from the real figures.
+
+![Overview](docs/screenshots/overview.png)
+
+### Payments and a payment's detail
+The payments list by status. One payment: its lifecycle step by step (with each step's evidence), the
+sanctions screening, and the route as the UETR tracker sees it, with every bank's deduction.
+
+![Payments](docs/screenshots/payments.png)
+![Payment detail](docs/screenshots/payment-detail.png)
+
+### UETR tracker
+Any payment the network carried, end to end: hops, confirmations, deductions, cover legs and returns,
+from every bank's messages.
+
+![UETR tracker](docs/screenshots/tracker.png)
+
+### Sanctions queue
+Payments held by screening, the hit explained (matching words, attribute comparison, score breakdown,
+engine hint), and the decision with four-eyes release.
+
+![Sanctions queue](docs/screenshots/sanctions.png)
+
+### Settlement
+Read from the central bank, as a bank sees T2 through T2's own screens:
+
+- **RTGS:** the T2 account, the queue, the intraday balance, the cut-off.
+- **Deferred net:** a MiniPay Net cycle's obligations matrix, net positions and netting efficiency.
+- **Instant:** the live feed counting down to the 10-second timeout.
+
+![Settlement: RTGS](docs/screenshots/settlement-rtgs.png)
+![Settlement: deferred net settlement](docs/screenshots/settlement-dns.png)
+![Settlement: instant](docs/screenshots/settlement-instant.png)
+
+### Reconciliation
+A nostro against its servicer's camt.053:
+
+- the statement, the match rate and the balance proof;
+- the matching table by rule, here a DNS cycle's net entry matched against its four gross payments, next
+  to the entry's XML;
+- the breaks, with suggested resolutions.
+
+![Reconciliation](docs/screenshots/reconciliation.png)
+
+### Create payment, Accounts & ledger, Reference data
+- **Create payment:** a payment form with scenario presets, service level, and the pacs.008 it would
+  produce.
+- **Accounts & ledger:** booked, reserved and available balances; statements per business date; holds;
+  the integrity check.
+- **Reference data:** the BIC directory, IBAN check and routing rules, as of any date.
+
+![Create payment](docs/screenshots/create-payment.png)
+![Accounts & ledger](docs/screenshots/accounts.png)
+![Reference data](docs/screenshots/reference-data.png)
+
 ## Tests
 
 ```bash

@@ -13,6 +13,8 @@ import type {
   MessageDetail,
   MessageView,
   PaymentPreview,
+  TrackerSummary,
+  TrackerView,
   Translation,
   IntegrityReport,
   JournalEntry,
@@ -388,5 +390,41 @@ export function useIssueStatement() {
     mutationFn: ({ accountId, date, key }: { accountId: number; date: string; key: string }) =>
       postJson<MessageView>(`/${bank.id}/api/messages/camt053`, { accountId, date }, key),
     onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id, 'messages'] }),
+  })
+}
+
+// ---------------------------------------------------------------- network: UETR tracker
+
+export function useTracker(uetr: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'tracker', uetr],
+    queryFn: async () => {
+      const res = await fetch(`/${bank.id}/api/tracker/${uetr}`, { headers: { Accept: 'application/json' } })
+      if (res.status === 404) return null // not seen on the network (yet)
+      if (!res.ok) throw new ApiError(res.status)
+      return (await res.json()) as TrackerView
+    },
+    enabled: !!uetr,
+    refetchInterval: 3_000,
+  })
+}
+
+export function useTrackerRecent() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'tracker', 'recent'],
+    queryFn: () => getJson<TrackerSummary[]>(`/${bank.id}/api/tracker?limit=50`),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useReturnPayment(uetr: string) {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ reasonCode, info, key }: { reasonCode: string; info?: string; key: string }) =>
+      postJson<Payment>(`/${bank.id}/api/payments/${uetr}/return`, { reasonCode, additionalInformation: info }, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id] }),
   })
 }

@@ -9,6 +9,8 @@ const NAME: Record<MessageType, { short: string; full: string; desc: string }> =
   PACS_008: { short: 'pacs.008', full: 'pacs.008.001.08', desc: 'FI to FI customer credit transfer' },
   PACS_002: { short: 'pacs.002', full: 'pacs.002.001.10', desc: 'Payment status report' },
   PACS_004: { short: 'pacs.004', full: 'pacs.004.001.09', desc: 'Payment return' },
+  PACS_009: { short: 'pacs.009', full: 'pacs.009.001.08', desc: 'FI credit transfer (cover)' },
+  CAMT_054: { short: 'camt.054', full: 'camt.054.001.08', desc: 'Credit notification' },
   CAMT_053: { short: 'camt.053', full: 'camt.053.001.08', desc: 'Bank to customer statement' },
   MT103: { short: 'MT103', full: 'MT103', desc: 'Single customer credit transfer' },
 }
@@ -24,7 +26,8 @@ const FIDELITY: Record<Fidelity, { label: string; tone: Tone }> = {
 /** The chip on a message: what it says about the payment. */
 function statusOf(m: MessageView): { label: string; tone: Tone } {
   if (m.status === 'INVALID') return { label: 'INVALID', tone: 'err' }
-  if (m.type === 'PACS_008') return { label: m.direction === 'OUTBOUND' ? 'SENT' : 'RCVD', tone: 'info' }
+  if (m.type === 'PACS_008' || m.type === 'PACS_009') return { label: m.direction === 'OUTBOUND' ? 'SENT' : 'RCVD', tone: 'info' }
+  if (m.type === 'CAMT_054') return { label: 'CRDT', tone: 'ok' }
   if (m.type === 'PACS_004') return { label: 'RTND', tone: 'err' }
   if (m.status === 'RJCT') return { label: 'RJCT', tone: 'err' }
   return { label: m.status ?? '—', tone: 'ok' }

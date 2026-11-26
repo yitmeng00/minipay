@@ -56,8 +56,11 @@ export function RouteCard({ view, tz, ourBic }: { view: TrackerView; tz: string;
   const name = (bic: string) =>
     directory.find((d) => d.bic === bic)?.institutionName ?? directory.find((d) => d.bic.slice(0, 8) === bic.slice(0, 8))?.institutionName ?? bic
   const banks = view.hops.length ? [view.hops[0].fromBic, ...view.hops.map((h) => h.toBic)] : []
+  // Still on its way (e.g. held for compliance at an intermediary): the creditor's bank is not reached yet.
+  const pending = !!view.creditorAgentBic && banks.length > 0 && !sameBank(banks[banks.length - 1], view.creditorAgentBic)
   const deduction = (bic: string): Charge | undefined => view.deductions.find((d) => sameBank(d.agentBic, bic))
-  const role = (i: number) => (i === 0 ? 'Debtor agent' : i === banks.length - 1 ? 'Creditor agent' : 'Intermediary · instructed agent')
+  const role = (i: number) =>
+    i === 0 ? 'Debtor agent' : i === banks.length - 1 && !pending ? 'Creditor agent' : 'Intermediary · instructed agent'
   const returned = view.returnPath.length > 0
   const status = GPI_STATUS[view.status]
   const amount = (m: Money | null) => (m ? `${m.currency} ${formatAmount(m.amount)}` : '—')
@@ -117,6 +120,20 @@ export function RouteCard({ view, tz, ourBic }: { view: TrackerView; tz: string;
               </Fragment>
             )
           })}
+          {pending && view.creditorAgentBic && (
+            <>
+              <div className="flex flex-[0_0_150px] flex-col items-center justify-center gap-1 px-1.5 text-[11px] text-muted">
+                <span>not passed on yet</span>
+                <div className="h-0 w-full border-t-2 border-dashed border-line" />
+              </div>
+              <div className="flex min-w-[170px] flex-[1_1_0] flex-col gap-1.5 rounded-lg border border-dashed border-line px-3.5 py-3">
+                <span className="lbl">Creditor agent</span>
+                <div className="text-sm font-semibold">{name(view.creditorAgentBic)}</div>
+                <div className="mono text-muted">{view.creditorAgentBic}</div>
+                <div className="mt-auto pt-1 text-xs text-muted">Not reached yet</div>
+              </div>
+            </>
+          )}
         </div>
 
         {view.coverLegs.length > 0 && (

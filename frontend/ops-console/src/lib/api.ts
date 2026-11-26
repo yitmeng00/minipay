@@ -6,8 +6,16 @@ import type {
   BankInfo,
   BicEntry,
   ChargeBearer,
+  CaseStatus,
+  ComplianceCase,
+  ComplianceSettings,
+  ComplianceStats,
   Cutoff,
   DailyOverview,
+  DecisionAction,
+  DecisionReason,
+  PaymentCompliance,
+  SanctionsList,
   Holiday,
   IbanCheck,
   MessageDetail,
@@ -428,3 +436,78 @@ export function useReturnPayment(uetr: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id] }),
   })
 }
+
+// ---------------------------------------------------------------- compliance: sanctions screening (M6)
+
+/** Held payments: open = waiting for a decision (oldest first); closed = decided on a day (bank's business day). */
+export function useCases(state: 'open' | 'closed', list?: string) {
+  const { bank } = useBank()
+  const q = new URLSearchParams({ state, ...(list ? { list } : {}) })
+  return useQuery({
+    queryKey: [bank.id, 'compliance', 'cases', state, list ?? ''],
+    queryFn: () => getJson<ComplianceCase[]>(`/${bank.id}/api/compliance/cases?${q}`),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useComplianceStats() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'compliance', 'stats'],
+    queryFn: () => getJson<ComplianceStats>(`/${bank.id}/api/compliance/stats`),
+    refetchInterval: 5_000,
+  })
+}
+
+export function useComplianceSettings() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'compliance', 'settings'],
+    queryFn: () => getJson<ComplianceSettings>(`/${bank.id}/api/compliance/settings`),
+    staleTime: 60_000,
+  })
+}
+
+export function useSanctionsLists() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'compliance', 'lists'],
+    queryFn: () => getJson<SanctionsList[]>(`/${bank.id}/api/compliance/lists`),
+    staleTime: 60_000,
+  })
+}
+
+/** How a payment was screened (null if it was not screened yet, e.g. rejected at validation). */
+export function usePaymentCompliance(paymentId: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'compliance', 'payment', paymentId],
+    queryFn: async () => {
+      const res = await fetch(`/${bank.id}/api/compliance/payments/${paymentId}`, { headers: { Accept: 'application/json' } })
+      if (res.status === 404) return null
+      if (!res.ok) throw new ApiError(res.status)
+      return (await res.json()) as PaymentCompliance
+    },
+    enabled: !!paymentId,
+    refetchInterval: 5_000,
+  })
+}
+
+export type DecisionBody = { action: DecisionAction; reason: DecisionReason | null; comment: string; decidedBy: string }
+
+export function useDecide(caseId: string) {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ body, key }: { body: DecisionBody; key: string }) =>
+      postJson<ComplianceCase>(`/${bank.id}/api/compliance/cases/${caseId}/decisions`, body, key),
+    // A closing decision resumes the payment: refresh payments too, not only the queue.
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id] }),
+  })
+}
+
+export function decisionsCsvUrl(bankId: string, from: string, to: string) {
+  return `/${bankId}/api/compliance/decisions.csv?from=${from}&to=${to}`
+}
+
+export const OPEN_CASE: CaseStatus[] = ['OPEN', 'ESCALATED', 'PENDING_APPROVAL']

@@ -65,6 +65,16 @@ class ModuleBoundariesTest {
     }
 
     @Test
+    void compliance_stands_on_its_own() {
+        // The hub asks compliance; compliance never reaches into payments, the ledger or the network. Its
+        // decisions reach the hub only as an in-process event (ComplianceDecisionMade) the hub listens to.
+        noClasses().that().resideInAPackage("com.minipay.compliance..")
+                .should().dependOnClassesThat().resideInAnyPackage(MODULES.stream().filter(m -> !m.equals("compliance"))
+                        .map(m -> "com.minipay." + m + "..").toArray(String[]::new))
+                .check(classes);
+    }
+
+    @Test
     void modules_are_free_of_cycles() {
         slices().matching("com.minipay.(*)..").should().beFreeOfCycles().check(classes);
     }

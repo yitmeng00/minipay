@@ -60,6 +60,14 @@ minipay:
   # Comma-separated (read with @Value; a YAML list would not bind to it).
   network:
     participants: MNPAMYKLXXX,MNPBDEFFXXX,MNPCGB2LXXX
+  # Sanctions screening (ADR-007): a score at or above hold-threshold holds the payment for review;
+  # releasing a case whose best score reaches four-eyes-threshold needs a second person.
+  # lists: the list codes this bank screens against (empty = all loaded lists).
+  compliance:
+    hold-threshold: 75
+    four-eyes-threshold: 90
+    sla: PT2H
+    lists: []
   seed:
     enabled: false
   payments:

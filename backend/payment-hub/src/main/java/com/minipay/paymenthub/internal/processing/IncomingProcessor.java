@@ -1,6 +1,7 @@
 package com.minipay.paymenthub.internal.processing;
 
 import com.minipay.common.id.Bic;
+import com.minipay.compliance.api.CaseVerdict;
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.common.money.CurrencyUnits;
 import com.minipay.common.money.Money;
@@ -117,9 +118,10 @@ public class IncomingProcessor {
         return switch (p.status()) {
             case RECEIVED -> validate(p);
             case VALIDATED -> screen(p);
-            case SCREENED -> act(p);
+            case SCREENED -> act(p, Resume.SCREENED);
+            case HELD_COMPLIANCE -> afterCompliance(p);
             case AWAITING_COVER -> settleCover(p);
-            default -> false; // final, forwarded (waiting for the next bank), or held for compliance
+            default -> false; // final, or forwarded (waiting for the next bank)
         };
     }
 
@@ -174,25 +176,67 @@ public class IncomingProcessor {
                 new Change(PaymentStatus.VALIDATED, null, detail, "svc/validator"));
     }
 
+    /** Every bank screens for itself (ADR-007): we hold it even if the banks before us let it through. */
     private boolean screen(Payment p) {
-        ScreeningPort.Result result = screening.screen(p);
+        ScreeningPort.Result result = screening.screen(p, LocalDate.now(clock.withZone(bankZone)));
         return transitions.transition(p.id(), PaymentStatus.VALIDATED, payment ->
-                new Change(result.hit() ? PaymentStatus.HELD_COMPLIANCE : PaymentStatus.SCREENED, null, result.detail(), "svc/screening"));
+                new Change(PaymentStatus.SCREENED, null, result.detail(), "svc/screening"))
+                && (!result.hit() || transitions.transition(p.id(), PaymentStatus.SCREENED, payment ->
+                new Change(PaymentStatus.HELD_COMPLIANCE, null, result.detail(), "svc/screening")));
     }
 
-    private boolean act(Payment p) {
+    /**
+     * How the step after screening is entered: straight from SCREENED, or from HELD_COMPLIANCE after a
+     * release, in which case the release is written in front of the history entry and its officers are
+     * the actor.
+     */
+    record Resume(PaymentStatus from, String note, String actor) {
+        static final Resume SCREENED = new Resume(PaymentStatus.SCREENED, "", null);
+        static final Resume AWAITING_COVER = new Resume(PaymentStatus.AWAITING_COVER, "", null);
+
+        String detail(String detail) {
+            return note + detail;
+        }
+
+        String actor(String usual) {
+            return actor != null ? actor : usual;
+        }
+    }
+
+    /**
+     * Held for compliance: released, the payment continues exactly as if it had passed screening;
+     * rejected, the sender gets a pacs.002 RJCT RR04 ("regulatory reason") before anything is booked.
+     * The RJCT says no more than that: telling the sender (and through it, the debtor) that the payment
+     * hit a sanctions list could tip off the listed party, so the details stay in our case file.
+     */
+    private boolean afterCompliance(Payment p) {
+        CaseVerdict v = screening.verdict(p);
+        String actor = actor(v);
+        return switch (v.verdict()) {
+            case RELEASED -> act(p, new Resume(PaymentStatus.HELD_COMPLIANCE, v.summary() + " · ", actor));
+            case REJECTED -> reject(p, PaymentStatus.HELD_COMPLIANCE, "RR04", v.summary(), "Regulatory reason", actor);
+            case PENDING, NONE -> false;
+        };
+    }
+
+    static String actor(CaseVerdict v) {
+        String a = "compliance/" + v.decidedBy();
+        return a.length() <= 64 ? a : a.substring(0, 64);
+    }
+
+    private boolean act(Payment p, Resume r) {
         if (p.kind() == PaymentKind.COVER) {
-            return settleCoverLeg(p);
+            return settleCoverLeg(p, r);
         }
         if (!isUs(p.creditorAgentBic())) {
-            return forward(p);
+            return forward(p, r);
         }
         if ("COVE".equals(p.settlementMethod())) {
-            return transitions.transition(p.id(), PaymentStatus.SCREENED, payment ->
-                    new Change(PaymentStatus.AWAITING_COVER, null, "Holding the payment until the cover arrives via "
-                            + p.coverAgentBic() + " (camt.054)", "svc/gateway"));
+            return transitions.transition(p.id(), r.from(), payment ->
+                    new Change(PaymentStatus.AWAITING_COVER, null, r.detail("Holding the payment until the cover arrives via "
+                            + p.coverAgentBic() + " (camt.054)"), r.actor("svc/gateway")));
         }
-        return credit(p, PaymentStatus.SCREENED, inboundAccount(p).orElseThrow(), Money.of(p.interbankSettlementAmount(), p.currency()),
+        return credit(p, r, inboundAccount(p).orElseThrow(), Money.of(p.interbankSettlementAmount(), p.currency()),
                 "Received " + p.settlementMethod() + " from " + p.instructingAgentBic());
     }
 
@@ -213,12 +257,13 @@ public class IncomingProcessor {
         if (!n.amount().currencyCode().equals(p.currency())) {
             return reject(p, PaymentStatus.AWAITING_COVER, "AM03", "Cover arrived in " + n.amount().currencyCode());
         }
-        return credit(p, PaymentStatus.AWAITING_COVER, inboundAccount(p).orElseThrow(), n.amount(),
+        return credit(p, Resume.AWAITING_COVER, inboundAccount(p).orElseThrow(), n.amount(),
                 "Cover received from " + p.coverAgentBic() + " (camt.054 " + notice.get().msgId() + ")");
     }
 
     /** Creditor's bank: book the money in, net of our charge, to our customer; tell the sender. */
-    private boolean credit(Payment p, PaymentStatus from, AccountView inbound, Money received, String how) {
+    private boolean credit(Payment p, Resume r, AccountView inbound, Money received, String how) {
+        PaymentStatus from = r.from();
         AccountView creditor = ledger.findAccountByNumber(p.creditorAccount()).orElseThrow();
         Money fee = ourCharge(p, received);
         List<PostingLine> lines = new ArrayList<>();
@@ -234,20 +279,20 @@ public class IncomingProcessor {
         // The confirmation states our deduction, so every bank on the route sees what the creditor received.
         MessageView acsc = status(p, TransactionStatus.ACSC, null, null,
                 fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of());
-        String detail = how + "; credited " + received.minus(fee) + " to " + p.creditorAccount()
+        String detail = r.detail(how) + "; credited " + received.minus(fee) + " to " + p.creditorAccount()
                 + (fee.isPositive() ? " (our charge " + fee + ")" : "") + " · pacs.002 ACSC " + acsc.msgId() + " → " + p.instructingAgentBic();
         return transitions.transition(p.id(), from, payment -> {
             payment.credited(inbound.id(), fee.amount(), p.executionDate());
             network.deliver(p.id(), acsc);
-            return new Change(PaymentStatus.SETTLED, null, detail, "svc/gateway");
+            return new Change(PaymentStatus.SETTLED, null, detail, r.actor("svc/gateway"));
         });
     }
 
     /** Intermediary: book it through, deduct our charge, pass it on, tell the sender we accepted it. */
-    private boolean forward(Payment p) {
+    private boolean forward(Payment p, Resume rs) {
         Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), p.executionDate());
         if (outcome.route().isEmpty()) {
-            return reject(p, PaymentStatus.SCREENED, "CNOR", "No route: " + outcome.problem());
+            return reject(p, rs.from(), "CNOR", "No route: " + outcome.problem());
         }
         Router.Route r = outcome.route().get();
         AccountView inbound = inboundAccount(p).orElseThrow();
@@ -262,7 +307,7 @@ public class IncomingProcessor {
             ledger.post(new PostEntryCommand(key(p, "forward"), EntryType.SETTLE, p.id(), p.executionDate(),
                     "Pass-through " + p.endToEndId() + " · " + p.instructingAgentBic() + " → " + r.instructedAgentBic(), lines));
         } catch (LedgerException e) {
-            return reject(p, PaymentStatus.SCREENED, iso(e), e.getMessage());
+            return reject(p, rs.from(), iso(e), e.getMessage());
         }
         // Our own InstrId for the next hop; it must not change on a re-run, so it is derived once and
         // carried by the stored message (the business key makes the second build a replay).
@@ -283,21 +328,21 @@ public class IncomingProcessor {
                 p.executionDate(), r.settlementMethod(), null, previous, in.remittanceInformation());
         MessageView pacs008 = messaging.issuePacs008("pacs.008:fwd:" + p.id(), onwardTransfer);
         MessageView acsp = status(p, TransactionStatus.ACSP, null, null);
-        String detail = "Forwarded pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic() + " · booked "
+        String detail = rs.note() + "Forwarded pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic() + " · booked "
                 + inbound.accountNumber() + " → " + r.settlementAccountNumber() + ", onward " + onward
                 + (fee.isPositive() ? " (our charge " + fee + ")" : "") + "; routed by " + r.describe()
                 + " · pacs.002 ACSP " + acsp.msgId() + " → " + p.instructingAgentBic();
-        return transitions.transition(p.id(), PaymentStatus.SCREENED, payment -> {
+        return transitions.transition(p.id(), rs.from(), payment -> {
             payment.forwarded(inbound.id(), fee.amount(), r.instructedAgentBic(), r.settlementAccountId(),
                     p.executionDate(), r.ruleId(), pacs008.instructionId(), p.settlementMethod());
             network.deliver(p.id(), pacs008);
             network.deliver(p.id(), acsp);
-            return new Change(PaymentStatus.SENT, null, detail, "svc/gateway");
+            return new Change(PaymentStatus.SENT, null, detail, rs.actor("svc/gateway"));
         });
     }
 
     /** Cover correspondent (pacs.009): debit the debtor bank, credit the creditor bank, notify it (camt.054). */
-    private boolean settleCoverLeg(Payment p) {
+    private boolean settleCoverLeg(Payment p, Resume r) {
         AccountView from = inboundAccount(p).orElseThrow();
         AccountView to = bankAccount(AccountType.VOSTRO, p.creditorAgentBic(), p.currency()).orElseThrow();
         Money amount = Money.of(p.interbankSettlementAmount(), p.currency());
@@ -307,21 +352,21 @@ public class IncomingProcessor {
                     "Cover " + p.endToEndId() + " · " + p.instructingAgentBic() + " → " + p.creditorAgentBic(),
                     List.of(new PostingLine(from.id(), Direction.D, amount), new PostingLine(to.id(), Direction.C, amount)))).value();
         } catch (LedgerException e) {
-            return reject(p, PaymentStatus.SCREENED, iso(e), e.getMessage());
+            return reject(p, r.from(), iso(e), e.getMessage());
         }
         CreditTransfer underlying = messaging.coverTransfer(p.inboundMessageId()).underlying();
         MessageView camt054 = messaging.issueCamt054("camt.054:" + p.id(), new CreditNotification(ownBic,
                 Bic.parse(p.creditorAgentBic()).value(), to.accountNumber(), amount, p.executionDate(), entry.createdAt(),
                 p.uetr().toString(), underlying != null ? underlying.endToEndId() : p.endToEndId(), p.instructionId(),
                 entry.id().toString().replace("-", "")));
-        String detail = "Debited " + from.accountNumber() + " (" + p.instructingAgentBic() + "), credited "
+        String detail = r.note() + "Debited " + from.accountNumber() + " (" + p.instructingAgentBic() + "), credited "
                 + to.accountNumber() + " (" + p.creditorAgentBic() + ") " + amount + " · camt.054 " + camt054.msgId()
                 + " → " + p.creditorAgentBic();
-        return transitions.transition(p.id(), PaymentStatus.SCREENED, payment -> {
+        return transitions.transition(p.id(), r.from(), payment -> {
             payment.forwarded(from.id(), BigDecimal.ZERO, Bic.parse(p.creditorAgentBic()).value(), to.id(), p.executionDate(),
                     null, null, p.settlementMethod());
             network.deliver(p.id(), camt054);
-            return new Change(PaymentStatus.SETTLED, null, detail, "svc/gateway");
+            return new Change(PaymentStatus.SETTLED, null, detail, r.actor("svc/gateway"));
         });
     }
 
@@ -329,13 +374,18 @@ public class IncomingProcessor {
 
     /** Refuse before booking: REJECTED here, pacs.002 RJCT with the reason to the bank that sent it. */
     private boolean reject(Payment p, PaymentStatus from, String code, String detail) {
+        return reject(p, from, code, detail, detail, "svc/validator");
+    }
+
+    /** @param told what the RJCT's AddtlInf says (may be less than {@code detail}, which stays with us) */
+    private boolean reject(Payment p, PaymentStatus from, String code, String detail, String told, String actor) {
         log.info("Incoming payment {} rejected {}: {}", p.uetr(), code, detail);
-        MessageView rjct = status(p, TransactionStatus.RJCT, code, detail);
+        MessageView rjct = status(p, TransactionStatus.RJCT, code, told);
         return transitions.transition(p.id(), from, payment -> {
             payment.reject(code, detail);
             network.deliver(p.id(), rjct);
             return new Change(PaymentStatus.REJECTED, code, detail + " · pacs.002 RJCT " + rjct.msgId() + " → "
-                    + p.instructingAgentBic(), "svc/validator");
+                    + p.instructingAgentBic(), actor);
         });
     }
 

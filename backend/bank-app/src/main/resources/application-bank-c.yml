@@ -33,6 +33,9 @@ minipay:
       # Our EUR account at Bank B, our EUR correspondent. Mirror of Bank B's vostro DE65500100600778812011.
       - { number: 1103-EUR-MNPB, type: NOSTRO, currency: EUR, owner: "Nostro EUR @ Bank B", counterparty-bic: MNPBDEFFXXX }
       - { number: GB23MNPC40051288779901, type: CUSTOMER, currency: EUR, owner: "Harlow & Finch Engineering Ltd (EUR)", opening-balance: 750000.00, funded-from: 1103-EUR-MNPB }
+      # A customer whose name resembles a (simulated) sanctions list entry: payments to it are held
+      # for review at every bank on the way (M6, ADR-007).
+      - { number: GB20MNPC40051290550011, type: CUSTOMER, currency: EUR, owner: "Oakridge Interiors Ltd" }
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - EUR" }
     # Bank C's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:

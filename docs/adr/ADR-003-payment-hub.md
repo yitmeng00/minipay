@@ -5,7 +5,8 @@
 - **Milestone:** M2
 - **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates;
   ADR-005 (M4): the pacs.008 is issued when sending, and network outcomes arrive as pacs.002 / pacs.004;
-  ADR-006 (M5): one state machine table per direction, incoming payments, outcomes after SENT (RJCT, early returns)
+  ADR-006 (M5): one state machine table per direction, incoming payments, outcomes after SENT (RJCT, early returns);
+  ADR-007 (M6): real screening; HELD_COMPLIANCE released or rejected (RR04) by compliance decisions, both directions
 
 ## Context
 
@@ -38,7 +39,7 @@ Two rules come straight from how payments work:
   by the *next* bank before settlement (pacs.002 RJCT) arrives with the network simulator (M5), and
   will be modelled then.
 - **HELD_COMPLIANCE is a waiting room off SCREENED.** Only a compliance decision moves the payment on
-  (M6): release to FUNDS_RESERVED, or refuse to REJECTED.
+  (M6, ADR-007 §7): release to FUNDS_RESERVED, or refuse to REJECTED (RR04).
 
 ### 2. Every status change writes history and an outbox event in one transaction
 

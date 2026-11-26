@@ -230,6 +230,7 @@ public class MessagingService implements MessagingApi {
         MxReader.Parsed p = MxReader.read(raw, null);
         List<Charge> charges = List.of();
         String method = null;
+        String creditorAgent = null;
         if (p.errors().isEmpty() && p.type() != null) {
             AbstractMX mx = AbstractMX.parse(raw);
             switch (p.type()) {
@@ -237,6 +238,7 @@ public class MessagingService implements MessagingApi {
                     CreditTransfer t = TransferReader.pacs008((MxPacs00800108) mx);
                     charges = t.charges();
                     method = t.settlementMethod().name();
+                    creditorAgent = t.creditorAgentBic();
                 }
                 case PACS_004 -> charges = TransferReader.pacs004((MxPacs00400109) mx).charges();
                 case PACS_002 -> charges = TransferReader.pacs002Charges((com.prowidesoftware.swift.model.mx.MxPacs00200110) mx);
@@ -246,7 +248,7 @@ public class MessagingService implements MessagingApi {
             }
         }
         return new MessageSummary(p.type(), p.msgId(), p.from(), p.to(), p.uetr(), p.endToEndId(), p.originalMsgId(),
-                p.amount(), p.settlementDate(), method, p.status(), p.reasonCode(), charges, p.errors());
+                p.amount(), p.settlementDate(), method, creditorAgent, p.status(), p.reasonCode(), charges, p.errors());
     }
 
     @Override

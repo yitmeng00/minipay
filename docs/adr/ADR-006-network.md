@@ -4,6 +4,7 @@
 - **Date:** 2026-11-26
 - **Milestone:** M5
 - **Amends:** ADR-003 §1 (state machine), §11 (network outcomes); ADR-005 §5 (receiving)
+- **Amended by:** ADR-007 (M6): every bank screens incoming payments; the tracker reads CdtrAgt from the pacs.008
 
 ## Context
 

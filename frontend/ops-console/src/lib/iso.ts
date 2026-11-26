@@ -22,6 +22,7 @@ export const REASON: Record<string, string> = {
   NARR: 'Narrative',
   RC01: 'Bank identifier incorrect',
   RR03: 'Missing creditor name or address',
+  RR04: 'Regulatory reason',
 }
 
 /** gpi-style tracker status of a payment as the network sees it. */

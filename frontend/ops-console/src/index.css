@@ -490,6 +490,36 @@
     color: var(--fg);
   }
 
+  /* ---- Sanctions queue item (design: .qitem) and highlighted name words (design: mark) */
+  .qitem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 10px;
+    width: 100%;
+    text-align: left;
+    border: 0;
+    border-bottom: 1px solid var(--border2);
+    background: transparent;
+    color: var(--fg);
+    font: inherit;
+    padding: 11px 14px;
+    cursor: pointer;
+  }
+  .qitem:hover {
+    background: var(--surface2);
+  }
+  .qitem.on {
+    background: var(--accent-bg);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  mark {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    border-radius: 3px;
+    padding: 0 2px;
+    font-weight: 600;
+  }
+
   /* ---- Message list (design: .msg) */
   .msg {
     display: flex;

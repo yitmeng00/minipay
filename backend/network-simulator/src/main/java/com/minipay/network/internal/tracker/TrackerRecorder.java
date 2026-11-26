@@ -43,7 +43,7 @@ class TrackerRecorder {
         Header id = record.headers().lastHeader("event-id");
         UUID eventId = id != null ? UUID.fromString(new String(id.value(), StandardCharsets.UTF_8)) : UUID.randomUUID();
         repo.record(new TrackedMessage(eventId, s.type().identifier(), s.msgId(), s.senderBic(), s.receiverBic(),
-                s.originalMsgId(), s.amount(), s.settlementMethod(), s.status(), s.reasonCode(), s.charges(),
+                s.originalMsgId(), s.amount(), s.settlementMethod(), s.creditorAgentBic(), s.status(), s.reasonCode(), s.charges(),
                 Instant.ofEpochMilli(record.timestamp())), UUID.fromString(s.uetr()));
     }
 }

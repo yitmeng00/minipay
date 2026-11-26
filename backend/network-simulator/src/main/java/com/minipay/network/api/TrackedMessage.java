@@ -16,6 +16,7 @@ public record TrackedMessage(
         String originalMsgId,
         Money amount,
         String settlementMethod,
+        String creditorAgentBic,
         String status,
         String reasonCode,
         List<Charge> charges,

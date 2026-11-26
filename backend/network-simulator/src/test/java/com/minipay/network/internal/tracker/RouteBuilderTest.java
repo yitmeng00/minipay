@@ -22,8 +22,9 @@ class RouteBuilderTest {
 
     static TrackedMessage msg(int second, String type, String msgId, String from, String to, String orig, String amount,
                               String method, String status, List<Charge> charges) {
+        // Every pacs.008 here is for Bank C (its CdtrAgt), whichever bank the hop goes to.
         return new TrackedMessage(UUID.randomUUID(), type, msgId, from, to, orig, amount == null ? null : eur(amount), method,
-                status, null, charges, T0.plusSeconds(second));
+                type.startsWith("pacs.008") ? C : null, status, null, charges, T0.plusSeconds(second));
     }
 
     static Money eur(String a) {
@@ -54,6 +55,16 @@ class RouteBuilderTest {
         assertThat(v.sentAmount()).isEqualTo(eur("1000.00"));
         assertThat(v.creditedAmount()).isEqualTo(eur("975.00"));
         assertThat(v.endToEnd()).isEqualTo(Duration.ofSeconds(2));
+    }
+
+    /** Held for compliance at Bank B: only the first hop exists, but the payment is still for Bank C. */
+    @Test
+    void a_payment_waiting_at_an_intermediary_is_serial_and_still_for_the_creditors_bank() {
+        TrackerView v = RouteBuilder.build(UETR, serial().subList(0, 1));
+        assertThat(v.method()).isEqualTo("SERIAL");
+        assertThat(v.creditorAgentBic()).isEqualTo(C);
+        assertThat(v.status()).isEqualTo("ACSP");
+        assertThat(v.hops()).hasSize(1);
     }
 
     @Test

@@ -53,7 +53,11 @@ public final class RouteBuilder {
         }
 
         String debtorAgent = pacs008.isEmpty() ? null : pacs008.get(0).fromBic();
-        String creditorAgent = pacs008.isEmpty() ? null : pacs008.get(pacs008.size() - 1).toBic();
+        // The pacs.008 names the bank the payment is for (CdtrAgt). The last hop's receiver is only the
+        // creditor's bank once the payment has got there: until then (held at an intermediary, say) it is
+        // somewhere on the way.
+        String creditorAgent = pacs008.isEmpty() ? null : pacs008.get(0).creditorAgentBic() != null
+                ? pacs008.get(0).creditorAgentBic() : pacs008.get(pacs008.size() - 1).toBic();
         Optional<TrackedMessage> acsc = replies.stream()
                 .filter(r -> "ACSC".equals(r.status()) && same(r.fromBic(), creditorAgent)).findFirst();
         Optional<TrackedMessage> rjct = replies.stream()
@@ -71,7 +75,8 @@ public final class RouteBuilder {
         Duration endToEnd = acsc.isPresent() && !pacs008.isEmpty()
                 ? Duration.between(pacs008.get(0).sentAt(), acsc.get().sentAt()) : null;
         String method = pacs008.isEmpty() ? null
-                : "COVE".equals(pacs008.get(0).settlementMethod()) ? "COVER" : pacs008.size() > 1 ? "SERIAL" : "DIRECT";
+                : "COVE".equals(pacs008.get(0).settlementMethod()) ? "COVER"
+                : pacs008.size() > 1 || !same(pacs008.get(0).toBic(), creditorAgent) ? "SERIAL" : "DIRECT";
 
         return new TrackerView(uetr, status, method, debtorAgent, creditorAgent,
                 pacs008.isEmpty() ? null : pacs008.get(0).amount(), credited,

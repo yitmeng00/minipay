@@ -41,8 +41,8 @@ public class TrackerRepository {
         }
         return jdbc.sql("""
                         INSERT INTO network.tracker_event (event_id, uetr, message_type, msg_id, sender_bic, receiver_bic,
-                               original_msg_id, amount, currency, settlement_method, status, reason_code, charges, sent_at)
-                        VALUES (:id, :uetr, :type, :msgId, :from, :to, :orig, :amount, :ccy, :method, :status, :reason,
+                               original_msg_id, amount, currency, settlement_method, creditor_agent_bic, status, reason_code, charges, sent_at)
+                        VALUES (:id, :uetr, :type, :msgId, :from, :to, :orig, :amount, :ccy, :method, :cdtrAgt, :status, :reason,
                                 CAST(:charges AS jsonb), :sentAt)
                         ON CONFLICT (event_id) DO NOTHING
                         """)
@@ -50,7 +50,7 @@ public class TrackerRepository {
                 .param("from", m.fromBic()).param("to", m.toBic()).param("orig", m.originalMsgId())
                 .param("amount", m.amount() == null ? null : m.amount().amount())
                 .param("ccy", m.amount() == null ? null : m.amount().currencyCode())
-                .param("method", m.settlementMethod()).param("status", m.status()).param("reason", m.reasonCode())
+                .param("method", m.settlementMethod()).param("cdtrAgt", m.creditorAgentBic()).param("status", m.status()).param("reason", m.reasonCode())
                 .param("charges", charges).param("sentAt", Timestamp.from(m.sentAt()))
                 .update() == 1;
     }
@@ -79,6 +79,6 @@ public class TrackerRepository {
         return new TrackedMessage(rs.getObject("event_id", UUID.class), rs.getString("message_type"), rs.getString("msg_id"),
                 rs.getString("sender_bic").trim(), rs.getString("receiver_bic").trim(), rs.getString("original_msg_id"),
                 amount == null ? null : Money.of(amount, ccy.trim()), rs.getString("settlement_method"),
-                rs.getString("status"), rs.getString("reason_code"), charges, rs.getTimestamp("sent_at").toInstant());
+                rs.getString("creditor_agent_bic") == null ? null : rs.getString("creditor_agent_bic").trim(), rs.getString("status"), rs.getString("reason_code"), charges, rs.getTimestamp("sent_at").toInstant());
     }
 }

@@ -10,5 +10,77 @@
     </parent>
     <artifactId>settlement</artifactId>
     <name>MiniPay :: Settlement</name>
-    <description>RTGS queue, deferred net settlement batches and instant settlement with timeout. Placeholder until milestone M7.</description>
+    <description>The simulated clearing and settlement systems (ADR-008): a T2-style RTGS with a liquidity queue, a deferred net settlement ACH with cycles and unwinding, and an instant scheme on prefunded positions with a timeout. Runs at the operator (the central bank); the banks reach it over the network.</description>
+    <dependencies>
+        <!-- Only the api packages are used (ArchUnit-enforced). -->
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>ledger</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>refdata</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>messaging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>payment-hub</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

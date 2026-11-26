@@ -19,6 +19,12 @@ spring:
       ddl-auto: validate
   kafka:
     bootstrap-servers: localhost:9092
+    consumer:
+      # A bank that starts late (or for the first time) processes everything waiting in its inbox.
+      auto-offset-reset: earliest
+      properties:
+        # The tracker subscribes by pattern; notice new network topics within seconds, not minutes.
+        metadata.max.age.ms: 10000
     producer:
       # Wait for all in-sync replicas, and let the broker drop duplicate retries (idempotent producer).
       acks: all
@@ -49,6 +55,11 @@ management:
 minipay:
   bank:
     time-zone: UTC
+  # The simulated banks: each has an inbox on the network. Messages to anyone else go to
+  # minipay.network.external (nobody answers them; the console can play that bank).
+  # Comma-separated (read with @Value; a YAML list would not bind to it).
+  network:
+    participants: MNPAMYKLXXX,MNPBDEFFXXX,MNPCGB2LXXX
   seed:
     enabled: false
   payments:

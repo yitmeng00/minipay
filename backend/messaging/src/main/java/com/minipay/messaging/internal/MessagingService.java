@@ -5,6 +5,7 @@ import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.AccountView;
 import com.minipay.ledger.api.LedgerApi;
 import com.minipay.ledger.api.StatementView;
+import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.CoverTransfer;
 import com.minipay.messaging.api.CreditNotification;
 import com.minipay.messaging.api.CreditTransfer;
@@ -12,6 +13,7 @@ import com.minipay.messaging.api.Idempotent;
 import com.minipay.messaging.api.InboundMessage;
 import com.minipay.messaging.api.MessageDetail;
 import com.minipay.messaging.api.MessageDirection;
+import com.minipay.messaging.api.MessageSummary;
 import com.minipay.messaging.api.MessageType;
 import com.minipay.messaging.api.MessageView;
 import com.minipay.messaging.api.MessagingApi;
@@ -221,6 +223,30 @@ public class MessagingService implements MessagingApi {
     @Override
     public MessageDetail get(UUID id) {
         return repo.find(id).orElseThrow(() -> new MessagingException(MessagingError.NOT_FOUND, "Message " + id + " not found"));
+    }
+
+    @Override
+    public MessageSummary inspect(String raw) {
+        MxReader.Parsed p = MxReader.read(raw, null);
+        List<Charge> charges = List.of();
+        String method = null;
+        if (p.errors().isEmpty() && p.type() != null) {
+            AbstractMX mx = AbstractMX.parse(raw);
+            switch (p.type()) {
+                case PACS_008 -> {
+                    CreditTransfer t = TransferReader.pacs008((MxPacs00800108) mx);
+                    charges = t.charges();
+                    method = t.settlementMethod().name();
+                }
+                case PACS_004 -> charges = TransferReader.pacs004((MxPacs00400109) mx).charges();
+                case PACS_002 -> charges = TransferReader.pacs002Charges((com.prowidesoftware.swift.model.mx.MxPacs00200110) mx);
+                case PACS_009 -> method = "INDA";
+                default -> {
+                }
+            }
+        }
+        return new MessageSummary(p.type(), p.msgId(), p.from(), p.to(), p.uetr(), p.endToEndId(), p.originalMsgId(),
+                p.amount(), p.settlementDate(), method, p.status(), p.reasonCode(), charges, p.errors());
     }
 
     @Override

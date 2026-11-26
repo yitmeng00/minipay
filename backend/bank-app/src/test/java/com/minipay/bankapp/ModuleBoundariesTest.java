@@ -71,10 +71,21 @@ class ModuleBoundariesTest {
 
     @Test
     void business_code_does_not_talk_to_kafka_directly() {
-        // Rule 6: publishing goes through the transactional outbox + relay (M2), never from business code.
+        // Kafka is transport: the outbox relay publishes, the network inbox and tracker consume. Nothing else touches it.
+        noClasses().that().resideInAPackage("com.minipay..")
+                .and().resideOutsideOfPackages("com.minipay.paymenthub.internal.outbox..", "com.minipay.network.internal..")
+                .should().dependOnClassesThat().resideInAnyPackage("org.apache.kafka..", "org.springframework.kafka..")
+                .check(classes);
+    }
+
+    @Test
+    void only_the_outbox_relay_publishes() {
+        // Rule 6: a message reaches Kafka only through the transactional outbox, never sent directly.
         noClasses().that().resideInAPackage("com.minipay..")
                 .and().resideOutsideOfPackage("com.minipay.paymenthub.internal.outbox..")
-                .should().dependOnClassesThat().resideInAnyPackage("org.apache.kafka..", "org.springframework.kafka..")
+                .should().dependOnClassesThat().haveFullyQualifiedName("org.springframework.kafka.core.KafkaTemplate")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName("org.apache.kafka.clients.producer.Producer")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName("org.apache.kafka.clients.producer.KafkaProducer")
                 .check(classes);
     }
 }

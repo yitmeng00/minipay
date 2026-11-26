@@ -56,6 +56,9 @@ public interface MessagingApi {
 
     MessageDetail get(UUID id);
 
+    /** Reads a message without storing it: what it says, and whether it passes the checks. */
+    MessageSummary inspect(String raw);
+
     /** The customer credit transfer in a stored pacs.008. */
     CreditTransfer creditTransfer(UUID messageId);
 

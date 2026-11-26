@@ -95,6 +95,15 @@ public final class TransferReader {
                 reason == null || reason.getAddtlInf() == null || reason.getAddtlInf().isEmpty() ? null : String.join(" ", reason.getAddtlInf()));
     }
 
+    public static List<Charge> pacs002Charges(com.prowidesoftware.swift.model.mx.MxPacs00200110 mx) {
+        var tx = mx.getFIToFIPmtStsRpt().getTxInfAndSts().get(0);
+        List<Charge> charges = new ArrayList<>();
+        if (tx.getChrgsInf() != null) {
+            tx.getChrgsInf().forEach(c -> charges.add(new Charge(Mx.money(c.getAmt().getValue(), c.getAmt().getCcy()), Mx.bic(c.getAgt()))));
+        }
+        return charges;
+    }
+
     public static CreditNotification camt054(MxCamt05400108 mx) {
         AccountNotification17 n = mx.getBkToCstmrDbtCdtNtfctn().getNtfctn().get(0);
         ReportEntry10 e = n.getNtry().get(0);

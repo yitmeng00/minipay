@@ -231,7 +231,9 @@ public class IncomingProcessor {
         } catch (LedgerException e) {
             return reject(p, from, iso(e), e.getMessage());
         }
-        MessageView acsc = status(p, TransactionStatus.ACSC, null, null);
+        // The confirmation states our deduction, so every bank on the route sees what the creditor received.
+        MessageView acsc = status(p, TransactionStatus.ACSC, null, null,
+                fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of());
         String detail = how + "; credited " + received.minus(fee) + " to " + p.creditorAccount()
                 + (fee.isPositive() ? " (our charge " + fee + ")" : "") + " · pacs.002 ACSC " + acsc.msgId() + " → " + p.instructingAgentBic();
         return transitions.transition(p.id(), from, payment -> {
@@ -339,10 +341,15 @@ public class IncomingProcessor {
 
     /** A pacs.002 about this payment to the bank that sent it to us (one per status, so a re-run replays it). */
     public MessageView status(Payment p, TransactionStatus status, String reason, String info) {
+        return status(p, status, reason, info, List.of());
+    }
+
+    /** @param charges for an ACSC: the deductions made by the creditor's bank (us, or the bank after us) */
+    public MessageView status(Payment p, TransactionStatus status, String reason, String info, List<Charge> charges) {
         String original = messaging.get(p.inboundMessageId()).message().msgId();
         return messaging.issuePacs002("pacs.002:" + status.name().toLowerCase() + ":" + p.id(), new StatusReport(ownBic,
                 Bic.parse(p.instructingAgentBic()).value(), original, p.instructionId(), p.endToEndId(), p.uetr().toString(),
-                status, reason, info == null ? null : info.length() > 105 ? info.substring(0, 105) : info));
+                status, reason, info == null ? null : info.length() > 105 ? info.substring(0, 105) : info, charges));
     }
 
     /** Where the money arrives, by settlement method (see the class comment). */

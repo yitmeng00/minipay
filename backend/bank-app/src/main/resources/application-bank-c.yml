@@ -17,6 +17,10 @@ minipay:
   payments:
     outward-fees:
       GBP: 10.00
+    # Our charge on a payment another bank sends us (SHAR/CRED only): deducted before we credit our customer.
+    processing-fees:
+      EUR: 10.00
+      GBP: 5.00
   seed:
     enabled: true
     accounts:
@@ -26,6 +30,10 @@ minipay:
       - { number: GB67MNPC40051271520093, type: CUSTOMER, currency: GBP, owner: "Harlow & Finch Engineering Ltd", opening-balance: 2310880.40, funded-from: 1001-GBP-RTGS }
       - { number: GB70MNPC40051261047725, type: CUSTOMER, currency: GBP, owner: "Pennine Textiles Ltd",           opening-balance: 388120.75,  funded-from: 1001-GBP-RTGS }
       - { number: 4021-FEE-GBP, type: FEE_INCOME, currency: GBP, owner: "Fee income - GBP" }
+      # Our EUR account at Bank B, our EUR correspondent. Mirror of Bank B's vostro DE65500100600778812011.
+      - { number: 1103-EUR-MNPB, type: NOSTRO, currency: EUR, owner: "Nostro EUR @ Bank B", counterparty-bic: MNPBDEFFXXX }
+      - { number: GB23MNPC40051288779901, type: CUSTOMER, currency: EUR, owner: "Harlow & Finch Engineering Ltd (EUR)", opening-balance: 750000.00, funded-from: 1103-EUR-MNPB }
+      - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - EUR" }
     # Bank C's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: GBP, method: DIRECT, settlement-account: GB86MNPC40051288334410, priority: 10, from: "2024-01-01", release: v2024.01.1 }

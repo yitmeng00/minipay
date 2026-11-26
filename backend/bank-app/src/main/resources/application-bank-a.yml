@@ -62,3 +62,7 @@ minipay:
       # Catch-alls: anyone else, through our correspondent for the currency.
       - { id: R-011, destination: "*",         currency: EUR, method: SERIAL, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 99, from: "2024-01-01", release: v2024.01.1 }
       - { id: R-012, destination: "*",         currency: GBP, method: SERIAL, next-hop: MNPCGB2LXXX, settlement-account: 1102-GBP-MNPC, priority: 99, from: "2024-01-01", release: v2024.01.1 }
+      # Bank C's Manchester branch in EUR: by cover. The pacs.008 goes straight to Bank C, the money
+      # separately through Bank B (pacs.009 COV), which credits Bank C's EUR account. Compare R-003:
+      # Bank C's head office in EUR goes serially, the pacs.008 itself travelling through Bank B.
+      - { id: R-020, destination: "MNPCGB2L200", currency: EUR, method: COVER, next-hop: MNPBDEFFXXX, settlement-account: 1101-EUR-MNPB, priority: 10, from: "2024-01-01", release: v2024.01.1 }

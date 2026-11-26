@@ -114,7 +114,7 @@ class BankAppIT {
     void seeds_bank_a_routing_table_and_routes_by_value_date() throws Exception {
         mvc.perform(get("/api/refdata/routing-rules"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(12));
+                .andExpect(jsonPath("$.length()").value(13));
         // Paris in EUR: serial via Bank B until 30 Nov, cover from 1 Dec (R-005 → R-006).
         mvc.perform(get("/api/refdata/routes").param("bic", "MNPEFRPPXXX").param("currency", "EUR").param("date", "2026-11-30"))
                 .andExpect(jsonPath("$.route.rule.ruleId").value("R-005"))

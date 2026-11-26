@@ -397,7 +397,9 @@ public class PaymentService implements PaymentHubApi {
             case ACCEPTED -> detail = "Accepted by " + p.instructedAgentBic() + " · " + ref;
             case SETTLED -> {
                 if (passedOn) {
-                    upstream = incoming.status(p, TransactionStatus.ACSC, null, null);
+                    // Pass the creditor's confirmation back, with the deductions it reported.
+                    upstream = incoming.status(p, TransactionStatus.ACSC, null, null,
+                            messaging.inspect(messaging.get(inbound.id()).raw()).charges());
                 }
                 detail = "Credited by the creditor's bank · " + ref
                         + (upstream != null ? " · ACSC " + upstream.msgId() + " → " + p.instructingAgentBic() : "");

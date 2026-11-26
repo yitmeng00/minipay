@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Reference data, always asked "as of" a date (rule 9): the answer for a past date is what was true
@@ -48,9 +49,24 @@ public interface RefDataApi {
 
     List<HolidayView> holidays(LocalDate from, LocalDate to);
 
+    // ------------------------------------------------------------------ clearing systems
+
+    /** The system of this kind for a currency on a date (one at most). */
+    Optional<ClearingSystemView> clearingSystem(RoutingMethod kind, String currency, LocalDate on);
+
+    Optional<ClearingSystemView> clearingSystem(String code, LocalDate on);
+
+    List<ClearingSystemView> clearingSystems(LocalDate on);
+
     // ------------------------------------------------------------------ routing
 
     RouteResolution route(String creditorAgentBic, String currency, LocalDate valueDate);
+
+    /**
+     * Routing restricted to some methods: an instant payment may only go by INSTANT, an urgent one never by
+     * DNS (ADR-008). Rules of other methods are not candidates at all.
+     */
+    RouteResolution route(String creditorAgentBic, String currency, LocalDate valueDate, Set<RoutingMethod> allowed);
 
     /** Every rule ever published, including expired and scheduled ones. */
     List<RoutingRuleView> routingRules();

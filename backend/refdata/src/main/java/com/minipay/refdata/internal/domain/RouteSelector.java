@@ -1,5 +1,9 @@
 package com.minipay.refdata.internal.domain;
 
+import com.minipay.refdata.api.ClearingSystemView;
+import java.util.EnumSet;
+import java.util.Set;
+
 import com.minipay.common.id.Bic;
 import com.minipay.refdata.api.BicEntry;
 import com.minipay.refdata.api.Connectivity;
@@ -27,8 +31,9 @@ import java.util.function.Function;
  *       then the lower rule id wins, so the choice is always deterministic.</li>
  *   <li>The winner must be usable: whoever receives our message must be CONNECTED in the BIC directory
  *       on that date. For SERIAL that is the next hop; for DIRECT and COVER the creditor agent; COVER also
- *       needs the next hop for the cover payment. An RTGS route only needs the creditor agent to exist,
- *       because RTGS participation is separate from network messaging.</li>
+ *       needs the next hop for the cover payment. RTGS, DNS and INSTANT routes go through the currency's
+ *       clearing system of that kind (ADR-008): its operator must be CONNECTED; whether the creditor agent
+ *       participates is the operator's check. An RTGS that is not simulated needs nothing more (M3).</li>
  * </ol>
  * An unusable winner is <b>not</b> skipped in favour of the runner-up: a quiet fall-through would send
  * money by a route nobody chose for that destination. It is reported, and the payment is rejected CNOR.
@@ -40,9 +45,21 @@ public final class RouteSelector {
 
     public static RouteResolution select(List<RoutingRuleView> rules, String creditorAgentBic, String currency,
                                          LocalDate valueDate, Function<String, Optional<BicEntry>> directory) {
+        return select(rules, creditorAgentBic, currency, valueDate, EnumSet.allOf(RoutingMethod.class), directory,
+                kind -> Optional.empty());
+    }
+
+    /**
+     * @param allowed the methods the payment may use: rules of other methods are not candidates at all
+     * @param systems the clearing system of a kind (RTGS, DNS, INSTANT) in this currency on the value date
+     */
+    public static RouteResolution select(List<RoutingRuleView> rules, String creditorAgentBic, String currency,
+                                         LocalDate valueDate, Set<RoutingMethod> allowed,
+                                         Function<String, Optional<BicEntry>> directory,
+                                         Function<RoutingMethod, Optional<ClearingSystemView>> systems) {
         Bic agent = Bic.parse(creditorAgentBic);
         List<RoutingRuleView> matching = rules.stream()
-                .filter(r -> r.currency().equals(currency) && r.matches(agent.value()))
+                .filter(r -> r.currency().equals(currency) && r.matches(agent.value()) && allowed.contains(r.method()))
                 .sorted(Comparator.comparing((RoutingRuleView r) -> !r.validOn(valueDate))
                         .thenComparingInt(RoutingRuleView::priority)
                         .thenComparing(RoutingRuleView::specificity, Comparator.reverseOrder())
@@ -72,7 +89,17 @@ public final class RouteSelector {
         }
         String instructedAgent = winner.method() == RoutingMethod.SERIAL ? winner.nextHopBic() : agent.value();
         String problem = null;
-        if (winner.method() != RoutingMethod.RTGS) {
+        ClearingSystemView system = null;
+        if (winner.method().isClearing()) {
+            // Through a clearing system our message goes to its operator, who must be reachable; the creditor
+            // agent need not be on the network at all, only a participant (the operator checks that).
+            system = systems.apply(winner.method()).orElse(null);
+            if (system == null && winner.method() != RoutingMethod.RTGS) {
+                problem = "no " + winner.method() + " system for " + currency + " on " + valueDate;
+            } else if (system != null) {
+                problem = unreachable(system.operatorBic(), valueDate, directory);
+            }
+        } else {
             problem = unreachable(instructedAgent, valueDate, directory);
         }
         if (problem == null && winner.method() == RoutingMethod.COVER) {
@@ -82,7 +109,7 @@ public final class RouteSelector {
             return new RouteResolution(agent.value(), currency, valueDate, Optional.empty(),
                     winner.ruleId() + " cannot be used: " + problem, considered);
         }
-        return new RouteResolution(agent.value(), currency, valueDate, Optional.of(new Route(winner, instructedAgent)),
+        return new RouteResolution(agent.value(), currency, valueDate, Optional.of(new Route(winner, instructedAgent, system)),
                 null, considered);
     }
 

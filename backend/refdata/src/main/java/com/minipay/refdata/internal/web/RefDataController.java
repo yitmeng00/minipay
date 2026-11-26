@@ -105,6 +105,13 @@ class RefDataController {
         return refdata.schemes(on(date));
     }
 
+    @GetMapping("/clearing-systems")
+    @Operation(summary = "The clearing and settlement systems on the network (RTGS, DNS, instant) on a date")
+    List<com.minipay.refdata.api.ClearingSystemView> clearingSystems(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return refdata.clearingSystems(on(date));
+    }
+
     @GetMapping("/cutoffs")
     @Operation(summary = "Per currency: the settlement date and cut-off for a payment sent now")
     List<CutoffView> cutoffs() {

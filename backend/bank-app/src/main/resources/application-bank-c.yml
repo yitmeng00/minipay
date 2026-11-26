@@ -21,6 +21,14 @@ minipay:
     processing-fees:
       EUR: 10.00
       GBP: 5.00
+  # Nostro reconciliation (M8, ADR-009): our EUR account at Bank B, and our accounts at the central bank.
+  recon:
+    nostros:
+      - { account: 1103-EUR-MNPB, servicer: MNPBDEFFXXX, servicer-account: DE65500100600778812011 }
+      - { account: 1004-EUR-T2,   servicer: MNCBDEFFXXX, servicer-account: RTGS-MNPCGB2L }
+      - { account: 1005-EUR-INST, servicer: MNCBDEFFXXX, servicer-account: INST-MNPCGB2L }
+    adjustment-accounts:
+      EUR: 6110-EUR-BANKCHG
   seed:
     enabled: true
     accounts:
@@ -43,6 +51,7 @@ minipay:
       - { number: 1004-EUR-T2, type: NOSTRO, currency: EUR, owner: "T2 account (central bank)", counterparty-bic: MNCBDEFFXXX, allow-overdraft: true }
       - { number: GB23MNPC40051277330021, type: CUSTOMER, currency: EUR, owner: "Pennine Textiles Ltd (EUR)", opening-balance: 2500000.00, funded-from: 1004-EUR-T2 }
       - { number: 1005-EUR-INST, type: NOSTRO, currency: EUR, owner: "MiniPay Instant position (central bank)", counterparty-bic: MNCBDEFFXXX, opening-balance: 500000.00, funded-from: 1004-EUR-T2 }
+      - { number: 6110-EUR-BANKCHG, type: SUSPENSE, currency: EUR, owner: "Bank charges and reconciliation differences EUR", allow-overdraft: true }
     # Bank C's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: GBP, method: DIRECT, settlement-account: GB86MNPC40051288334410, priority: 10, from: "2024-01-01", release: v2024.01.1 }

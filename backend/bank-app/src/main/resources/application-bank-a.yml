@@ -19,6 +19,15 @@ minipay:
       EUR: 20.00
       GBP: 15.00
       MYR: 5.00
+  # Nostro reconciliation (M8, ADR-009): our accounts kept by other banks, and their number there (nostro
+  # master data). Each servicer sends its camt.053 at end of day; we match it against our ledger.
+  recon:
+    nostros:
+      - { account: 1101-EUR-MNPB, servicer: MNPBDEFFXXX, servicer-account: DE87500100600778812003 }
+      - { account: 1102-GBP-MNPC, servicer: MNPCGB2LXXX, servicer-account: GB86MNPC40051288334410 }
+    adjustment-accounts:
+      EUR: 6110-EUR-BANKCHG
+      GBP: 6111-GBP-BANKCHG
   seed:
     enabled: true
     # Nostro balances are not seeded directly: they are the contra side of the customer deposits
@@ -42,6 +51,10 @@ minipay:
       # --- P&L
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - outward transfers EUR" }
       - { number: 4021-FEE-GBP, type: FEE_INCOME, currency: GBP, owner: "Fee income - outward transfers GBP" }
+      # M8: what reconciliation books when the correspondent's statement shows a charge or difference we did not
+      # (a debit-normal technical account: an expense).
+      - { number: 6110-EUR-BANKCHG, type: SUSPENSE, currency: EUR, owner: "Bank charges and reconciliation differences EUR", allow-overdraft: true }
+      - { number: 6111-GBP-BANKCHG, type: SUSPENSE, currency: GBP, owner: "Bank charges and reconciliation differences GBP", allow-overdraft: true }
     # Bank A's routing table (ADR-004). Destination = institution (BIC8 + "*") or "*" for any; the
     # lowest priority valid on the value date wins. Rules are never edited: a change is a new rule
     # and the old one is end-dated, as R-010 → R-003 and R-005 → R-006 show.

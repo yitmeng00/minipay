@@ -13,12 +13,12 @@ settlement and reconciliation.
 
 The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have valid formats (IBAN check digits included).
 
-**Status:** M0–M7 are done; M8 (reconciliation) is next. See the [delivery plan](#milestones).
+**Status:** all milestones (M0–M8) are done. See the [delivery plan](#milestones).
 
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance, 008 settlement)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance, 008 settlement, 009 reconciliation)
 design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     4 × PostgreSQL 16 (one per bank, one for the central bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
@@ -30,7 +30,7 @@ backend/               Maven multi-module, Java 21, Spring Boot 3.5
   network-simulator/   The network between the banks: inboxes and the UETR tracker (M5)
   compliance/          Sanctions screening against effective-dated lists, cases, four-eyes release (M6)
   settlement/          The central bank's clearing systems: T2 queue, DNS netting, instant timeouts (M7)
-  recon/               Placeholder for M8
+  recon/               Nostro reconciliation: camt.053 statements, matching, breaks (M8)
   bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c|operator
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
@@ -447,6 +447,41 @@ Bank A is not a participant: it reaches the euro systems through Bank B. Every b
 (`1001-EUR-T2`, `1002-EUR-INST` at Bank B; `1004-EUR-T2`, `1005-EUR-INST` at Bank C) equals the central
 bank's account (`GET $OP/participants`), except for the payments still queued or in an open cycle.
 
+### Sample calls: reconciliation (all banks)
+
+Every servicer sends yesterday's camt.053 by itself after its midnight; every owner reconciles it on
+arrival. To see it at once, have the servicers send today's statements, which cuts the day (see ADR-009 §2).
+
+```bash
+A=localhost:8081/api; B=localhost:8082/api; C=localhost:8083/api; OP=localhost:8084/api; RUN=$(date +%s)
+
+# 1. Bank B charges Bank A a maintenance fee on its EUR account: Bank A does not know yet
+VOSTRO=$(curl -s "$B/ledger/accounts?type=VOSTRO" | jq -r '.[] | select(.accountNumber=="DE87500100600778812003") | .id')
+FEE=$(curl -s "$B/ledger/accounts?type=FEE_INCOME" | jq -r '.[] | select(.currency=="EUR") | .id')
+curl -s -X POST $B/ledger/journal-entries -H 'Content-Type: application/json' -H "Idempotency-Key: m8-fee-$RUN" -d "{
+  \"entryType\": \"FEE\", \"narrative\": \"ACCOUNT MAINTENANCE FEE NOV 2026\", \"postings\": [
+  {\"accountId\": $VOSTRO, \"direction\": \"D\", \"amount\": {\"amount\": \"25.00\", \"currency\": \"EUR\"}},
+  {\"accountId\": $FEE, \"direction\": \"C\", \"amount\": {\"amount\": \"25.00\", \"currency\": \"EUR\"}}]}" | jq -r .id
+
+# 2. The servicers send their statements; the owners reconcile on receipt
+for S in $B $C $OP; do curl -s -X POST $S/recon/statements/publish -H "Idempotency-Key: m8-eod-$S-$RUN" | jq -c .; done
+sleep 3
+for X in $A $B $C; do curl -s $X/recon/nostros | jq -r '.[] | "\(.account)  last statement \(.lastDate)  open breaks \(.openBreaks)"'; done
+
+# 3. Bank A: what matched how, the break, and the proof
+curl -s $A/recon/nostros/1101-EUR-MNPB | jq '{proof, rules: [.rows[].rule], breaks: [.breaks[] | select(.status=="OPEN") | {id, type, difference: .difference.amount, suggestion}]}'
+
+# 4. Resolve the charge by booking it (against 6110-EUR-BANKCHG): the nostro now equals Bank B's vostro
+BRK=$(curl -s $A/recon/nostros/1101-EUR-MNPB | jq -r '[.breaks[] | select(.status=="OPEN" and .type=="MISSING_IN_LEDGER")][0].id')
+curl -s -X POST $A/recon/breaks/$BRK/resolve -H 'Content-Type: application/json' -H "Idempotency-Key: m8-adj-$RUN" \
+  -d '{"action": "ADJUSTMENT", "comment": "Maintenance fee per our account agreement with Bank B", "by": "n.rahman"}' | jq -c '{id, status, action}'
+```
+
+In the console, open **Reconciliation**, pick a nostro and a statement date: the matching table (click a
+row for the camt.053 entry and why it matched), the balance proof, and the breaks with their
+suggested resolutions. Bank B's `1001-EUR-T2` shows a DNS cycle's net entry matched against its gross
+payments (Batch).
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -688,6 +723,33 @@ reject it: it can only return it (pacs.004) through the system.
 never wait for a cycle, instant ones go only through the instant scheme. The routing table ranks the
 methods. The service level says which methods a payment may use at all.
 
+## What you should learn from M8 (reconciliation)
+
+**Every nostro exists twice, and only one copy is the truth.** Our nostro is our record of an account
+the correspondent keeps. Every day its statement (camt.053) is compared with our books. Whatever does not
+agree is a break, and someone owns it until it is explained.
+
+**Match on the payment's own keys, strongest first.** The UETR is unique per payment and travels
+unchanged, so most entries match on it alone. After that, in order:
+
+- a batch: one net entry against the many payments it lists, as a DNS cycle settles them;
+- the end-to-end id;
+- the servicer's reference;
+- contra pairs that cancel out, such as a payment sent and then reversed.
+
+Points of view flip on the way: our Dr is the servicer's CRDT.
+
+**Most breaks are time.** We book a payment today; the servicer books it after its cut, or on its own
+date. Matching therefore works on open items carried forward, and a timing break clears by itself
+when the next statement shows the payment. The breaks that remain need people:
+
+- a charge we never booked: book it;
+- a payment booked twice: claim it back;
+- an amount that differs: find who deducted what.
+
+**Prove the balance.** The two closing balances may differ only by the open items. If they differ by
+more, a statement is missing or the opening balances never agreed, and no amount of matching fixes that.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -700,4 +762,4 @@ methods. The service level says which methods a payment may use at all.
 | M5 | Network simulator: 3 banks over Kafka, incoming payments, hop-by-hop outcomes, serial and cover, UETR tracker; Payment route and tracker screens | ✅ |
 | M6 | Compliance: sanctions screening at every bank against dated lists, explainable fuzzy matching, cases, four-eyes release, RR04; Sanctions queue screen | ✅ |
 | M7 | Settlement: a simulated central bank running T2 (RTGS queue, cut-off), MiniPay Net (cycles, netting, unwinding) and MiniPay Instant (prefunding, 10 s timeout); service levels; Settlement screen | ✅ |
-| M8 | Reconciliation: camt.053 matching, breaks | |
+| M8 | Reconciliation: end-of-day camt.053 from every servicer (batch entries for DNS cycles), matching by UETR, batch, E2E, reference and contra on open items, breaks with carry-forward, adjustment and claim, balance proof; Reconciliation screen | ✅ |

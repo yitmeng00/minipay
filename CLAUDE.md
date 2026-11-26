@@ -60,9 +60,16 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
   accounts (`1001-EUR-T2` etc., T2 mirrors may go negative). Payment `serviceLevel` NORM/HIGH/INST restricts routing
   methods (`clearing_system` refdata; methods DNS, INSTANT). Incoming instant: ACKED (ACCP to the operator), credited
   on its ACSC. A payment that arrived via T2/DNS is returned (pacs.004 via the operator), never RJCT.
+- Reconciliation (M8, `recon` module, ADR-009): servicers send yesterday's camt.053 per vostro / CB account (key
+  `camt053:<acct>:<date>`, issued + outbox in one tx); entries carry TxDtls refs (UETR/E2E), a DNS net booking lists
+  each payment (batch). Owners map statements via `minipay.recon.nostros` (servicer + account number there) and match
+  OPEN ITEMS since the first statement, signed owner's view (+ = in; ledger Dr ↔ CRDT): TAKE_ON (allows the opening
+  difference), UETR, BATCH, E2E, REFERENCE, CONTRA; leftovers are breaks (missing in ledger/statement, amount mismatch,
+  duplicate) that clear by later matches or are resolved (carry forward, ADJUSTMENT booked to
+  `minipay.recon.adjustment-accounts`, claim). Balance proof: difference = open items. NetworkInbox routes camt.053 to recon.
 - `commons-lang3.version` is overridden in the parent POM (Prowide needs ≥ 3.18; Boot manages 3.17).
 - ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance,
-  008 settlement.
+  008 settlement, 009 reconciliation.
 
 ## Non-negotiable rules
 

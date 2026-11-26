@@ -73,6 +73,15 @@ class RouteSelectorTest {
     }
 
     @Test
+    void a_branch_rule_beats_the_institution_rule() {
+        List<RoutingRuleView> rules = List.of(
+                rule("R-001", "MNPBDEFF*", RoutingMethod.DIRECT, null, 20, "2024-01-01", null),
+                rule("R-002", "MNPBDEFF100", RoutingMethod.COVER, "MNPBDEFFXXX", 20, "2024-01-01", null));
+        assertThat(route(rules, "MNPBDEFF100", "2026-11-25").route().orElseThrow().rule().ruleId()).isEqualTo("R-002");
+        assertThat(route(rules, "MNPBDEFFXXX", "2026-11-25").route().orElseThrow().rule().ruleId()).isEqualTo("R-001");
+    }
+
+    @Test
     void no_matching_rule_means_no_route() {
         RouteResolution r = route(RULES.subList(0, 1), "MNPDBEBBXXX", "2026-11-25");
         assertThat(r.route()).isEmpty();

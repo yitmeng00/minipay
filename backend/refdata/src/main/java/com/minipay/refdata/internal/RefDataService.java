@@ -263,8 +263,8 @@ public class RefDataService implements RefDataApi {
             throw new IllegalArgumentException("Idempotency-Key is required");
         }
         String dest = normalize(c.destination());
-        if (!dest.matches("^([A-Z0-9]{4}[A-Z]{2}[A-Z0-9]{2}\\*|\\*)$")) {
-            throw invalid("Destination must be an institution's BIC8 followed by * (e.g. MNPBDEFF*) or * for any institution");
+        if (!dest.matches("^([A-Z0-9]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3}|\\*)|\\*)$")) {
+            throw invalid("Destination must be a branch's BIC11, an institution's BIC8 followed by * (e.g. MNPBDEFF*) or * for anyone");
         }
         String ccy = normalize(c.currency());
         try {

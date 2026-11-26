@@ -19,11 +19,11 @@ import java.util.function.Function;
  * Chooses the routing rule for (creditor agent, currency, value date).
  *
  * <ol>
- *   <li>Candidates: rules in the currency whose destination covers the creditor agent's institution
- *       (its BIC8, or {@code *}).</li>
+ *   <li>Candidates: rules in the currency whose destination covers the creditor agent: its exact BIC
+ *       (one branch), its institution (BIC8 + {@code *}), or {@code *}.</li>
  *   <li>Only rules valid on the <b>value date</b> count. That is the date the money moves, not today. A
  *       payment warehoused until next week is routed by next week's rules.</li>
- *   <li>Lowest priority number wins. On equal priority, an institution-specific rule beats {@code *},
+ *   <li>Lowest priority number wins. On equal priority, the more specific rule wins (branch, then institution, then {@code *}),
  *       then the lower rule id wins, so the choice is always deterministic.</li>
  *   <li>The winner must be usable: whoever receives our message must be CONNECTED in the BIC directory
  *       on that date. For SERIAL that is the next hop; for DIRECT and COVER the creditor agent; COVER also
@@ -42,10 +42,10 @@ public final class RouteSelector {
                                          LocalDate valueDate, Function<String, Optional<BicEntry>> directory) {
         Bic agent = Bic.parse(creditorAgentBic);
         List<RoutingRuleView> matching = rules.stream()
-                .filter(r -> r.currency().equals(currency) && r.matches(agent.bic8()))
+                .filter(r -> r.currency().equals(currency) && r.matches(agent.value()))
                 .sorted(Comparator.comparing((RoutingRuleView r) -> !r.validOn(valueDate))
                         .thenComparingInt(RoutingRuleView::priority)
-                        .thenComparing(RoutingRuleView::isCatchAll)
+                        .thenComparing(RoutingRuleView::specificity, Comparator.reverseOrder())
                         .thenComparing(RoutingRuleView::ruleId))
                 .toList();
 

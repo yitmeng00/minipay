@@ -38,8 +38,15 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
   message. Raw text stored unchanged with a DB-checked SHA-256; invalid inbound messages are stored too (INVALID).
   Outbound dedupe by business key (`pacs.008:<paymentId>`), inbound by (sender, MsgId). Hub → messaging only;
   inbound pacs.002/004 go through `POST /api/payments/inbound`; the network simulation builds real messages.
+- Network (M5): messages go out through the outbox in the status tx to `minipay.network.<BIC8>` (non-participants:
+  `minipay.network.external`); `network` module = inbox consumer (→ `hub.receiveMessage("net:"+eventId)`) + UETR tracker.
+  Kafka only in `paymenthub.internal.outbox` (the only publisher) and `network.internal` (consumers).
+- Incoming payments: `IncomingProcessor` (creditor bank / intermediary / cover correspondent); SttlmMtd picks the
+  inbound account; RJCT before booking, reversal + relay after; outcomes travel back hop by hop. State machine is
+  per direction (OUTGOING/INCOMING tables). `minipay.network.participants` is comma-separated (read with @Value).
+- `NetworkE2EIT` runs all three banks in one JVM; pass overrides as command-line args (they outrank profile yml).
 - `commons-lang3.version` is overridden in the parent POM (Prowide needs ≥ 3.18; Boot manages 3.17).
-- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging.
+- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network.
 
 ## Non-negotiable rules
 

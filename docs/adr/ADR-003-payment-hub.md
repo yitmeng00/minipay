@@ -4,7 +4,8 @@
 - **Date:** 2026-11-24
 - **Milestone:** M2
 - **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates;
-  ADR-005 (M4): the pacs.008 is issued when sending, and network outcomes arrive as pacs.002 / pacs.004
+  ADR-005 (M4): the pacs.008 is issued when sending, and network outcomes arrive as pacs.002 / pacs.004;
+  ADR-006 (M5): one state machine table per direction, incoming payments, outcomes after SENT (RJCT, early returns)
 
 ## Context
 
@@ -19,7 +20,7 @@ final outcome. It must:
 
 ## Decisions
 
-### 1. Explicit state machine
+### 1. Explicit state machine — *per direction since M5, ADR-006 §5*
 
 ```
 RECEIVED → VALIDATED → SCREENED → FUNDS_RESERVED → SENT → ACKED → SETTLED → RETURNED

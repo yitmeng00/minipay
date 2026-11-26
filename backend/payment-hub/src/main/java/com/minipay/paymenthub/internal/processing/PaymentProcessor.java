@@ -16,6 +16,8 @@ import com.minipay.ledger.api.SettleReservationCommand;
 import com.minipay.ledger.api.SettlementLeg;
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.messaging.api.Charge;
+import com.minipay.common.id.Bic;
+import com.minipay.messaging.api.CoverTransfer;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.MessageView;
 import com.minipay.messaging.api.MessagingApi;
@@ -23,6 +25,7 @@ import com.minipay.messaging.api.SettlementMethod;
 import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.internal.config.PaymentHubProperties;
 import com.minipay.paymenthub.internal.domain.Payment;
+import com.minipay.paymenthub.internal.network.NetworkGateway;
 import com.minipay.paymenthub.internal.persistence.PaymentRepository;
 import com.minipay.paymenthub.internal.processing.PaymentTransitions.Change;
 import com.minipay.refdata.api.RefDataApi;
@@ -74,6 +77,8 @@ public class PaymentProcessor {
     private final LedgerApi ledger;
     private final RefDataApi refdata;
     private final MessagingApi messaging;
+    private final NetworkGateway network;
+    private final IncomingProcessor incoming;
     private final String ownBic;
     private final PaymentHubProperties props;
     private final Clock clock;
@@ -81,6 +86,7 @@ public class PaymentProcessor {
 
     public PaymentProcessor(PaymentRepository payments, PaymentTransitions transitions, PaymentValidator validator,
                             ScreeningPort screening, Router router, LedgerApi ledger, RefDataApi refdata, MessagingApi messaging,
+                            NetworkGateway network, IncomingProcessor incoming,
                             PaymentHubProperties props, ObjectProvider<Clock> clock,
                             @Value("${minipay.bank.time-zone:UTC}") ZoneId bankZone,
                             @Value("${minipay.bank.bic}") String ownBic) {
@@ -92,6 +98,8 @@ public class PaymentProcessor {
         this.ledger = ledger;
         this.refdata = refdata;
         this.messaging = messaging;
+        this.network = network;
+        this.incoming = incoming;
         this.ownBic = com.minipay.common.id.Bic.parse(ownBic).value();
         this.props = props;
         this.clock = clock.getIfAvailable(Clock::systemUTC);
@@ -102,6 +110,12 @@ public class PaymentProcessor {
     public void process(UUID paymentId) {
         for (int guard = 0; guard < 10; guard++) {
             Payment p = payments.findById(paymentId).orElseThrow();
+            if (p.direction() == com.minipay.paymenthub.api.PaymentDirection.INCOMING) {
+                if (!incoming.step(p)) {
+                    return;
+                }
+                continue;
+            }
             boolean progressed = switch (p.status()) {
                 case RECEIVED -> validate(p);
                 case VALIDATED -> screen(p);
@@ -233,13 +247,24 @@ public class PaymentProcessor {
         afterSettle.run();
         // The pacs.008 is built once per payment (business key): a re-run after a crash finds the message
         // it already issued, with the same MsgId, instead of sending a second one.
-        MessageView pacs008 = messaging.issuePacs008("pacs.008:" + p.id(), creditTransfer(p, r, valueDate));
+        CreditTransfer transfer = creditTransfer(p, r, valueDate);
+        MessageView pacs008 = messaging.issuePacs008("pacs.008:" + p.id(), transfer);
+        // Cover method: the pacs.008 goes straight to the creditor's bank; the money goes separately, as a
+        // pacs.009 COV to our correspondent, who credits the creditor's bank's account with it.
+        MessageView pacs009 = r.method() != RoutingMethod.COVER ? null : messaging.issuePacs009("pacs.009:" + p.id(),
+                new CoverTransfer(transfer.uetr(), transfer.instructionId(), transfer.endToEndId(), ownBic, r.nextHopBic(),
+                        ownBic, Bic.parse(p.creditorAgentBic()).value(), transfer.interbankAmount(), valueDate, transfer));
         String detail = "pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic()
+                + (pacs009 != null ? " · pacs.009 COV " + pacs009.msgId() + " → " + r.nextHopBic() : "")
                 + " · value date " + valueDate + rolled + "; booked to " + r.settlementAccountNumber()
-                + "; routed by " + r.describe() + ", SttlmMtd " + r.settlementMethod()
-                + (r.method() == RoutingMethod.COVER ? ", cover via " + r.nextHopBic() : "");
+                + "; routed by " + r.describe() + ", SttlmMtd " + r.settlementMethod();
         return transitions.transition(p.id(), PaymentStatus.FUNDS_RESERVED, payment -> {
-            payment.routed(r.instructedAgentBic(), r.settlementAccountId(), valueDate, r.ruleId());
+            payment.routed(r.instructedAgentBic(), r.settlementAccountId(), valueDate, r.ruleId(),
+                    r.settlementMethod().name(), r.method() == RoutingMethod.COVER ? r.nextHopBic() : null);
+            network.deliver(p.id(), pacs008);   // in the same transaction as SENT: both happen, or neither
+            if (pacs009 != null) {
+                network.deliver(p.id(), pacs009);
+            }
             return new Change(PaymentStatus.SENT, null, detail, "svc/gateway");
         });
     }

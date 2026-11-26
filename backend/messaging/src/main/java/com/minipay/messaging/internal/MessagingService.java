@@ -34,6 +34,7 @@ import com.minipay.messaging.internal.persistence.MessageRepository;
 import com.minipay.messaging.internal.persistence.MessageRepository.NewMessage;
 import com.prowidesoftware.swift.model.mx.AbstractMX;
 import com.prowidesoftware.swift.model.mx.MxCamt05400108;
+import com.prowidesoftware.swift.model.mx.MxPacs00400109;
 import com.prowidesoftware.swift.model.mx.MxPacs00800108;
 import com.prowidesoftware.swift.model.mx.MxPacs00900108;
 import java.time.Clock;
@@ -163,6 +164,21 @@ public class MessagingService implements MessagingApi {
     }
 
     @Override
+    public String buildPacs008(CreditTransfer t) {
+        return Mx.render(Pacs008Writer.build(t, newMsgId(t.instructingAgentBic(), MessageType.PACS_008), now()));
+    }
+
+    @Override
+    public String buildPacs009(CoverTransfer c) {
+        return Mx.render(Pacs009Writer.build(c, newMsgId(c.instructingAgentBic(), MessageType.PACS_009), now()));
+    }
+
+    @Override
+    public String buildCamt054(CreditNotification n) {
+        return Mx.render(Camt054Writer.build(n, newMsgId(n.fromBic(), MessageType.CAMT_054), now(), bankZone));
+    }
+
+    @Override
     public String buildPacs002(StatusReport r) {
         return Mx.render(Pacs002Writer.build(r, newMsgId(r.fromBic(), MessageType.PACS_002), now()));
     }
@@ -215,6 +231,11 @@ public class MessagingService implements MessagingApi {
     @Override
     public CoverTransfer coverTransfer(UUID id) {
         return TransferReader.pacs009((MxPacs00900108) parse(id, MessageType.PACS_009));
+    }
+
+    @Override
+    public PaymentReturn paymentReturn(UUID id) {
+        return TransferReader.pacs004((MxPacs00400109) parse(id, MessageType.PACS_004));
     }
 
     @Override

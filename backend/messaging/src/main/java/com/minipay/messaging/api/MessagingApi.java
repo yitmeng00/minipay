@@ -32,6 +32,15 @@ public interface MessagingApi {
     /** The pacs.008 this transfer would produce, without storing anything (a preview). */
     String renderPacs008(CreditTransfer transfer);
 
+    /** Builds a pacs.008 with a fresh MsgId (not stored), e.g. to play another bank in a simulation or a test. */
+    String buildPacs008(CreditTransfer transfer);
+
+    /** Builds a pacs.009 COV (not stored). */
+    String buildPacs009(CoverTransfer cover);
+
+    /** Builds a camt.054 credit notification (not stored). */
+    String buildCamt054(CreditNotification notification);
+
     /** Builds a pacs.002 (not stored: the caller decides whether it is sent or received). */
     String buildPacs002(StatusReport report);
 
@@ -52,6 +61,9 @@ public interface MessagingApi {
 
     /** The cover transfer in a stored pacs.009. */
     CoverTransfer coverTransfer(UUID messageId);
+
+    /** The return in a stored pacs.004. */
+    PaymentReturn paymentReturn(UUID messageId);
 
     /** The notification in a stored camt.054. */
     CreditNotification creditNotification(UUID messageId);

@@ -18,14 +18,16 @@ public record NetworkEvent(Type type, String reasonCode, Money returnedAmount, S
         ACCEPTED,
         /** Settlement confirmed (e.g. gpi tracker "credited", or RTGS confirmation). */
         SETTLED,
+        /** pacs.002 RJCT from a bank further on: it refused the payment (our booking is reversed). */
+        REJECTED,
         /** pacs.004 payment return. */
         RETURNED
     }
 
     public NetworkEvent {
         Objects.requireNonNull(type, "type");
-        if (type == Type.RETURNED && (reasonCode == null || !reasonCode.matches("[A-Z0-9]{4}"))) {
-            throw new IllegalArgumentException("A return needs a 4-character ISO reason code, e.g. AC04");
+        if ((type == Type.RETURNED || type == Type.REJECTED) && (reasonCode == null || !reasonCode.matches("[A-Z0-9]{4}"))) {
+            throw new IllegalArgumentException("A return or rejection needs a 4-character ISO reason code, e.g. AC04");
         }
     }
 }

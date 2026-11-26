@@ -6,8 +6,10 @@ import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.CoverTransfer;
 import com.minipay.messaging.api.CreditNotification;
 import com.minipay.messaging.api.CreditTransfer;
+import com.minipay.messaging.api.PaymentReturn;
 import com.minipay.messaging.api.SettlementMethod;
 import com.prowidesoftware.swift.model.mx.MxCamt05400108;
+import com.prowidesoftware.swift.model.mx.MxPacs00400109;
 import com.prowidesoftware.swift.model.mx.MxPacs00800108;
 import com.prowidesoftware.swift.model.mx.MxPacs00900108;
 import com.prowidesoftware.swift.model.mx.dic.AccountNotification17;
@@ -75,6 +77,22 @@ public final class TransferReader {
         return new CoverTransfer(tx.getPmtId().getUETR(), tx.getPmtId().getInstrId(), tx.getPmtId().getEndToEndId(),
                 Mx.bic(tx.getInstgAgt()), Mx.bic(tx.getInstdAgt()), Mx.bic(tx.getDbtr()), Mx.bic(tx.getCdtr()),
                 amount, tx.getIntrBkSttlmDt(), underlying);
+    }
+
+    public static PaymentReturn pacs004(MxPacs00400109 mx) {
+        var tx = mx.getPmtRtr().getTxInf().get(0);
+        List<Charge> charges = new ArrayList<>();
+        if (tx.getChrgsInf() != null) {
+            tx.getChrgsInf().forEach(c -> charges.add(new Charge(Mx.money(c.getAmt().getValue(), c.getAmt().getCcy()), Mx.bic(c.getAgt()))));
+        }
+        var reason = tx.getRtrRsnInf() == null || tx.getRtrRsnInf().isEmpty() ? null : tx.getRtrRsnInf().get(0);
+        return new PaymentReturn(mx.getAppHdr().from(), mx.getAppHdr().to(), tx.getRtrId(),
+                tx.getOrgnlGrpInf() != null ? tx.getOrgnlGrpInf().getOrgnlMsgId() : null, tx.getOrgnlInstrId(),
+                tx.getOrgnlEndToEndId(), tx.getOrgnlUETR(),
+                tx.getOrgnlIntrBkSttlmAmt() == null ? null : Mx.money(tx.getOrgnlIntrBkSttlmAmt().getValue(), tx.getOrgnlIntrBkSttlmAmt().getCcy()),
+                Mx.money(tx.getRtrdIntrBkSttlmAmt().getValue(), tx.getRtrdIntrBkSttlmAmt().getCcy()), tx.getIntrBkSttlmDt(),
+                charges, reason == null || reason.getRsn() == null ? null : reason.getRsn().getCd(),
+                reason == null || reason.getAddtlInf() == null || reason.getAddtlInf().isEmpty() ? null : String.join(" ", reason.getAddtlInf()));
     }
 
     public static CreditNotification camt054(MxCamt05400108 mx) {

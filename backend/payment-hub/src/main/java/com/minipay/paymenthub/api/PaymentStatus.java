@@ -22,15 +22,23 @@ public enum PaymentStatus {
     HELD_COMPLIANCE,
     /** Debtor's funds are on hold in the ledger. Warehoused payments wait here for their date. */
     FUNDS_RESERVED,
+    /**
+     * Incoming, cover method: we hold the customer payment (pacs.008) and wait for the money to arrive
+     * through the correspondent (camt.054 credit notification) before paying the creditor.
+     */
+    AWAITING_COVER,
     /** Booked in our ledger and handed to the network (pacs.008 to the next agent). */
     SENT,
     /** The next agent accepted it (pacs.002 ACCP / ACSP). */
     ACKED,
-    /** Settlement confirmed: the money has moved between the banks. */
+    /**
+     * Outgoing or forwarded: the creditor's bank confirmed the credit (pacs.002 ACSC). Incoming at the
+     * creditor's bank: we credited our customer.
+     */
     SETTLED,
-    /** Refused before it left us; carries an ISO reason code. Final. */
+    /** Refused, with an ISO reason code: by us before sending, or by a bank further on (pacs.002 RJCT). Final. */
     REJECTED,
-    /** Funds came back after settlement (pacs.004), e.g. creditor account closed (AC04). Final. */
+    /** Funds came back (pacs.004), e.g. creditor account closed (AC04). Final. */
     RETURNED;
 
     public boolean isFinal() {

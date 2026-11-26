@@ -19,8 +19,9 @@ import java.util.Optional;
  *       its MsgId) is the hop's status;</li>
  *   <li>the debtor's bank sent the first pacs.008; the creditor's bank received the last one;</li>
  *   <li>a pacs.009 and its camt.054 are the cover legs; pacs.004s are the return path;</li>
- *   <li>the payment's status is the creditor's bank's ACSC, a RJCT that reached the debtor's bank, a
- *       pacs.004 that reached it, or else "on its way" (ACSP).</li>
+ *   <li>the payment's status is the creditor's bank's ACSC (or, through a clearing system, the system's
+ *       ACSC to the debtor's bank), a RJCT that reached the debtor's bank, a pacs.004 that reached it, or
+ *       else "on its way" (ACSP).</li>
  * </ul>
  */
 public final class RouteBuilder {
@@ -60,21 +61,32 @@ public final class RouteBuilder {
                 ? pacs008.get(0).creditorAgentBic() : pacs008.get(pacs008.size() - 1).toBic();
         Optional<TrackedMessage> acsc = replies.stream()
                 .filter(r -> "ACSC".equals(r.status()) && same(r.fromBic(), creditorAgent)).findFirst();
+        // Through a clearing system (ADR-008) the operator forwards the payer's own pacs.008 (the same MsgId) and
+        // its ACSC to the debtor's bank is final, also when the creditor's bank sends no confirmation of its own
+        // (an instant payment).
+        boolean clearing = pacs008.stream().anyMatch(a -> pacs008.stream().anyMatch(b -> b != a
+                && a.msgId().equals(b.msgId()) && same(a.toBic(), b.fromBic())));
+        Optional<TrackedMessage> settledBySystem = !clearing || pacs008.isEmpty() ? Optional.empty() : replies.stream()
+                .filter(r -> "ACSC".equals(r.status()) && same(r.fromBic(), pacs008.get(0).toBic()) && same(r.toBic(), debtorAgent))
+                .findFirst();
         Optional<TrackedMessage> rjct = replies.stream()
                 .filter(r -> "RJCT".equals(r.status()) && same(r.toBic(), debtorAgent)).findFirst();
         Optional<TrackedMessage> returned = of(messages, "pacs.004.001.09").stream()
                 .filter(r -> same(r.toBic(), debtorAgent)).reduce((a, b) -> b);
 
-        String status = returned.isPresent() ? "RTND" : rjct.isPresent() ? "RJCT" : acsc.isPresent() ? "ACSC" : "ACSP";
+        String status = returned.isPresent() ? "RTND" : rjct.isPresent() ? "RJCT"
+                : acsc.isPresent() || settledBySystem.isPresent() ? "ACSC" : "ACSP";
         List<Charge> deductions = new ArrayList<>(pacs008.isEmpty() ? List.of() : pacs008.get(pacs008.size() - 1).charges());
         acsc.ifPresent(a -> a.charges().stream().filter(c -> deductions.stream().noneMatch(d -> same(d.agentBic(), c.agentBic())))
                 .forEach(deductions::add));
         Money last = pacs008.isEmpty() ? null : pacs008.get(pacs008.size() - 1).amount();
         Money credited = acsc.isPresent() && last != null
                 ? acsc.get().charges().stream().map(Charge::amount).reduce(last, Money::minus) : null;
-        Duration endToEnd = acsc.isPresent() && !pacs008.isEmpty()
-                ? Duration.between(pacs008.get(0).sentAt(), acsc.get().sentAt()) : null;
+        Optional<TrackedMessage> finalAnswer = acsc.or(() -> settledBySystem);
+        Duration endToEnd = finalAnswer.isPresent() && !pacs008.isEmpty()
+                ? Duration.between(pacs008.get(0).sentAt(), finalAnswer.get().sentAt()) : null;
         String method = pacs008.isEmpty() ? null
+                : clearing ? "CLEARING"
                 : "COVE".equals(pacs008.get(0).settlementMethod()) ? "COVER"
                 : pacs008.size() > 1 || !same(pacs008.get(0).toBic(), creditorAgent) ? "SERIAL" : "DIRECT";
 

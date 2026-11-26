@@ -352,6 +352,32 @@
     color: #111;
   }
 
+  /* ---- Segmented tabs with a sub-label (design: .seg, the Settlement model switch) */
+  .seg {
+    display: inline-flex;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  .seg button {
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+  }
+  .seg button + button {
+    border-left: 1px solid var(--border);
+  }
+  .seg button:hover {
+    color: var(--fg);
+  }
+  .seg button.on {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+
   /* ---- Two-line segmented choice (design: .seg2, charge bearer) */
   .seg2 {
     display: flex;

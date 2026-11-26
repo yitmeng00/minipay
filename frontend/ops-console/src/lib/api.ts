@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useBank } from './banks'
 import type {
+  ClearingParticipant,
+  ClearingSystem,
+  DnsCycle,
+  InstantView,
+  RtgsView,
+  ServiceLevel,
+  Transfer,
   Account,
   AccountType,
   BankInfo,
@@ -198,6 +205,7 @@ export type CreatePaymentBody = {
   requestedExecutionDate?: string
   endToEndId?: string
   remittanceInformation?: string
+  serviceLevel?: ServiceLevel
 }
 
 export function useCreatePayment() {
@@ -511,3 +519,81 @@ export function decisionsCsvUrl(bankId: string, from: string, to: string) {
 }
 
 export const OPEN_CASE: CaseStatus[] = ['OPEN', 'ESCALATED', 'PENDING_APPROVAL']
+
+// ---------------------------------------------------------------- settlement systems (M7): the operator's screens
+
+/**
+ * The clearing systems are not the bank's: they belong to the central bank (the operator, /operator). Like a
+ * bank using T2's own screens, the console asks the operator for this bank's view, by its BIC. Bank A is not
+ * a participant, so the operator answers 404 for it.
+ */
+const OP = '/operator/api/settlement'
+
+export function useClearingSystems() {
+  return useQuery({ queryKey: ['operator', 'systems'], queryFn: () => getJson<ClearingSystem[]>(`${OP}/systems`), staleTime: 60_000 })
+}
+
+export function useClearingParticipants() {
+  return useQuery({
+    queryKey: ['operator', 'participants'],
+    queryFn: () => getJson<ClearingParticipant[]>(`${OP}/participants`),
+    refetchInterval: 5_000,
+    retry: false,
+  })
+}
+
+export function useRtgs(bic: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['operator', 'rtgs', bic],
+    queryFn: () => getJson<RtgsView>(`${OP}/rtgs/${bic}`),
+    refetchInterval: 3_000,
+    enabled,
+    retry: false,
+  })
+}
+
+export function useDnsCycles() {
+  return useQuery({
+    queryKey: ['operator', 'dns', 'cycles'],
+    queryFn: () => getJson<DnsCycle[]>(`${OP}/dns/cycles`),
+    refetchInterval: 3_000,
+    retry: false,
+  })
+}
+
+export function useInstant(bic: string, enabled: boolean, paused: boolean) {
+  return useQuery({
+    queryKey: ['operator', 'instant', bic],
+    queryFn: () => getJson<InstantView>(`${OP}/instant/${bic}`),
+    refetchInterval: paused ? false : 1_000,
+    enabled,
+    retry: false,
+  })
+}
+
+export function useMoveUp() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, participant, key }: { id: string; participant: string; key: string }) =>
+      postJson<Transfer>(`${OP}/rtgs/transfers/${id}/move-up`, { participant }, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['operator'] }),
+  })
+}
+
+export function useChangePriority() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, participant, priority, key }: { id: string; participant: string; priority: 'HIGH' | 'NORM'; key: string }) =>
+      postJson<Transfer>(`${OP}/rtgs/transfers/${id}/priority`, { participant, priority }, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['operator'] }),
+  })
+}
+
+export function useCloseCycle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ key }: { key: string }) => postJson<DnsCycle>(`${OP}/dns/cycles/close`, {}, key),
+    // Settling a cycle moves money at the banks too (payments delivered): refresh everything.
+    onSuccess: () => qc.invalidateQueries(),
+  })
+}

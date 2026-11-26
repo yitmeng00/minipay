@@ -17,7 +17,7 @@ import {
 import { useBank } from '../lib/banks'
 import { BIC_RE, CHARGE_BEARER, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
 import { formatMoney } from '../lib/money'
-import type { Account, BicEntry, ChargeBearer, Payment } from '../lib/types'
+import type { Account, BicEntry, ChargeBearer, Payment, ServiceLevel } from '../lib/types'
 
 const NO_BICS: BicEntry[] = []
 
@@ -31,6 +31,14 @@ type Form = {
   valueDate: string
   endToEndId: string
   remittance: string
+  serviceLevel: ServiceLevel
+}
+
+/** M7: how fast the payment must go decides which routes it may take (ADR-008). */
+const SERVICE: Record<ServiceLevel, { label: string; hint: string }> = {
+  NORM: { label: 'Normal', hint: 'Any route; through the ACH (MiniPay Net) where the routing table prefers it: settled at the next cycle.' },
+  HIGH: { label: 'Urgent', hint: 'Never through the ACH. Through T2 it is settled gross, before normal payments in the queue.' },
+  INST: { label: 'Instant', hint: 'Only through MiniPay Instant: settled within 10 seconds, any day and hour, or rejected.' },
 }
 
 type Preset = 'happy' | 'iban' | 'funds' | 'future'
@@ -86,6 +94,7 @@ export function CreatePaymentPage() {
       valueDate: businessDate,
       endToEndId: 'INV-HF-2026-1187',
       remittance: 'INV-HF-2026-1187 CNC spindle assemblies',
+      serviceLevel: 'NORM',
     }
     switch (p) {
       case 'iban':
@@ -130,6 +139,7 @@ export function CreatePaymentPage() {
           requestedExecutionDate: f.valueDate || undefined,
           endToEndId: f.endToEndId || undefined,
           remittanceInformation: f.remittance || undefined,
+          serviceLevel: f.serviceLevel,
         }
       : null,
   )
@@ -241,6 +251,7 @@ export function CreatePaymentPage() {
           requestedExecutionDate: f.valueDate || undefined,
           endToEndId: f.endToEndId || undefined,
           remittanceInformation: f.remittance || undefined,
+          serviceLevel: f.serviceLevel,
         },
       },
       { onSuccess: (r) => setResult({ payment: r.value, replayed: r.replayed }) },
@@ -411,6 +422,20 @@ export function CreatePaymentPage() {
                 ))}
               </div>
               <span className="hint">{CHARGE_BEARER[f.chargeBearer].long}</span>
+            </div>
+            <div className="field col-span-2">
+              <span className="flabel" id="svc-l">
+                Service level
+              </span>
+              <div className="seg2" role="group" aria-labelledby="svc-l">
+                {(['NORM', 'HIGH', 'INST'] as ServiceLevel[]).map((l) => (
+                  <button key={l} type="button" className={f.serviceLevel === l ? 'on' : ''} aria-pressed={f.serviceLevel === l} onClick={() => set('serviceLevel', l)}>
+                    <span className="font-semibold">{SERVICE[l].label}</span>
+                    <span className="mono text-[11px]">{l}</span>
+                  </button>
+                ))}
+              </div>
+              <span className="hint">{SERVICE[f.serviceLevel].hint}</span>
             </div>
             <div className="field">
               <label htmlFor="e2e">End-to-end ID</label>

@@ -131,4 +131,16 @@ class MatcherTest {
         assertThat(Matcher.match(List.of(a, b), List.of(one), Set.of()).matches()).extracting(Matcher.Match::rule)
                 .containsExactly(Rule.TAKE_ON);
     }
+
+    @Test
+    void taking_on_an_account_allows_for_what_each_side_held_before_the_first_statement() {
+        // We already held 900 and book two opening lines (+750, -1000); the servicer opens the account with 650.
+        LedgerItem a = new LedgerItem(ids++, D, Instant.now(), new BigDecimal("750.00"), null, null, "Opening balance");
+        LedgerItem b = new LedgerItem(ids++, D, Instant.now(), new BigDecimal("-1000.00"), null, null, "Opening balance");
+        StatementItem one = new StatementItem(ids++, D, Instant.now(), new BigDecimal("650.00"), "S", "Opening balance", List.of());
+        BigDecimal openingDiff = new BigDecimal("-900.00"); // statement opening 0, our balance before 900
+        assertThat(Matcher.match(List.of(a, b), List.of(one), Set.of(), openingDiff).matches()).extracting(Matcher.Match::rule)
+                .containsExactly(Rule.TAKE_ON);
+        assertThat(Matcher.match(List.of(a, b), List.of(one), Set.of()).matches()).isEmpty();
+    }
 }

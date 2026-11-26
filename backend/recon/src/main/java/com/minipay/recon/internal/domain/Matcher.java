@@ -24,7 +24,8 @@ import java.util.function.Predicate;
  *
  * <h2>Rules, strongest first</h2>
  * <ol>
- *   <li><b>TAKE_ON</b>: the opening balances booked when the account was set up, on both sides.</li>
+ *   <li><b>TAKE_ON</b>: the opening balances booked when the account was set up, on both sides, allowing for what each
+ *       side already held before the first statement.</li>
  *   <li><b>UETR</b>: the same UETR and amount: unique per payment, the strongest key there is.</li>
  *   <li><b>BATCH</b>: one statement entry for several payments (a DNS cycle's net settlement): every transaction
  *       it lists matches one of our lines by UETR and amount, and they add up to the entry.</li>
@@ -86,6 +87,16 @@ public final class Matcher {
      * @param matchedStatement  UETR + amount of statement entries matched earlier (to recognise a duplicate)
      */
     public static Result match(List<LedgerItem> ledger, List<StatementItem> statement, Set<String> matchedStatement) {
+        return match(ledger, statement, matchedStatement, BigDecimal.ZERO);
+    }
+
+    /**
+     * @param openingDiff the first statement's opening balance minus our balance the day before. Taking on an account
+     *                    is right when both sides end up with the same balance: our balance before plus our opening
+     *                    lines equals the statement's opening plus its opening entries.
+     */
+    public static Result match(List<LedgerItem> ledger, List<StatementItem> statement, Set<String> matchedStatement,
+                               BigDecimal openingDiff) {
         List<LedgerItem> l = new ArrayList<>(ledger);
         List<StatementItem> s = new ArrayList<>(statement);
         l.sort(Comparator.comparing(LedgerItem::bookedAt, Comparator.nullsLast(Comparator.naturalOrder())).thenComparingLong(LedgerItem::id));
@@ -96,7 +107,8 @@ public final class Matcher {
         // TAKE_ON: everything booked as an opening balance on either side, if the totals agree.
         List<LedgerItem> lo = l.stream().filter(x -> TAKE_ON_NARRATIVE.equals(x.narrative())).toList();
         List<StatementItem> so = s.stream().filter(x -> TAKE_ON_NARRATIVE.equals(x.info())).toList();
-        if (!lo.isEmpty() && !so.isEmpty() && sum(lo.stream().map(LedgerItem::signed)).compareTo(sum(so.stream().map(StatementItem::signed))) == 0) {
+        if (!lo.isEmpty() && !so.isEmpty() && sum(lo.stream().map(LedgerItem::signed)).subtract(sum(so.stream().map(StatementItem::signed)))
+                .compareTo(openingDiff) == 0) {
             matches.add(new Match(Rule.TAKE_ON, lo.stream().map(LedgerItem::id).toList(), so.stream().map(StatementItem::id).toList()));
             l.removeAll(lo);
             s.removeAll(so);

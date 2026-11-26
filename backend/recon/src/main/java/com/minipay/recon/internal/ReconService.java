@@ -173,6 +173,8 @@ public class ReconService implements ReconApi {
                         l.paymentId(), p == null ? null : p.uetr(), p == null ? null : trim(p.endToEndId(), 35), trim(l.narrative(), 500)));
             }
         }
+        StatementRow first = statements.get(0);
+        BigDecimal openingDiff = first.opening().subtract(ledger.statement(acct.id(), first.date().minusDays(1)).closingBooked().amount());
         tx.executeWithoutResult(st -> {
             repo.lockAccount(account);
             fresh.forEach(repo::insertItem);
@@ -181,7 +183,7 @@ public class ReconService implements ReconApi {
             Set<String> seen = repo.matchedStatementPayments(account).stream()
                     .map(x -> Matcher.key(x[0], new BigDecimal(x[1]))).collect(Collectors.toSet());
             Matcher.Result result = Matcher.match(items.stream().map(ReconService::ledgerItem).toList(),
-                    entries.stream().map(this::statementItem).toList(), seen);
+                    entries.stream().map(this::statementItem).toList(), seen, openingDiff);
             Map<Long, BigDecimal> itemAmounts = items.stream().collect(Collectors.toMap(ItemRow::postingId, ItemRow::signed));
             Map<Long, BigDecimal> entryAmounts = entries.stream().collect(Collectors.toMap(EntryRow::id, EntryRow::signed));
             Instant now = clock.instant();
@@ -521,7 +523,15 @@ public class ReconService implements ReconApi {
         Map<Long, Long> matchOfLedger = new HashMap<>();
         Map<Long, Long> matchOfEntry = new HashMap<>();
         itemsOf.forEach((m, its) -> its.forEach(i -> ("LEDGER".equals(i.side()) ? matchOfLedger : matchOfEntry).put(i.itemId(), m)));
+        // The take-on match is the one match whose sides may differ: by what each side held before the first statement.
         BigDecimal explained = openingDiff;
+        for (MatchRow m : matches) {
+            if ("TAKE_ON".equals(m.rule())) {
+                for (MatchItemRow i : itemsOf.getOrDefault(m.id(), List.of())) {
+                    explained = "STATEMENT".equals(i.side()) ? explained.add(i.signed()) : explained.subtract(i.signed());
+                }
+            }
+        }
         for (EntryRow e : entries) {
             if (upTo.contains(e.statementId()) && !closedWithin(matchOfEntry.get(e.id()), itemsOf, itemById, entryById, d, upTo)) {
                 explained = explained.add(e.signed());

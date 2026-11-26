@@ -17,12 +17,14 @@ import com.minipay.ledger.api.SettlementLeg;
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.messaging.api.Charge;
 import com.minipay.common.id.Bic;
+import com.minipay.messaging.api.Clearing;
 import com.minipay.messaging.api.CoverTransfer;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.MessageView;
 import com.minipay.messaging.api.MessagingApi;
 import com.minipay.messaging.api.SettlementMethod;
 import com.minipay.paymenthub.api.PaymentStatus;
+import com.minipay.paymenthub.api.ServiceLevel;
 import com.minipay.paymenthub.internal.config.PaymentHubProperties;
 import com.minipay.paymenthub.internal.domain.Payment;
 import com.minipay.paymenthub.internal.network.NetworkGateway;
@@ -227,6 +229,10 @@ public class PaymentProcessor {
         String rolled = "";
         if (alreadyBooked.isPresent()) {
             valueDate = alreadyBooked.get();
+        } else if (p.serviceLevel() == ServiceLevel.INST) {
+            // Instant: settled today, in the scheme's time zone, at any hour of any day. No cut-off, no calendar.
+            valueDate = refdata.clearingSystem(RoutingMethod.INSTANT, p.currency(), today)
+                    .map(s -> LocalDate.now(clock.withZone(ZoneId.of(s.timeZone())))).orElse(today);
         } else {
             ValueDating dating;
             try {
@@ -240,7 +246,7 @@ public class PaymentProcessor {
             }
         }
 
-        Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), valueDate);
+        Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), valueDate, p.serviceLevel());
         if (outcome.route().isEmpty()) {
             return releaseAndReject(p, "CNOR", "No route on value date " + valueDate + ": " + outcome.problem());
         }
@@ -271,12 +277,17 @@ public class PaymentProcessor {
                 new CoverTransfer(transfer.uetr(), transfer.instructionId(), transfer.endToEndId(), ownBic, r.nextHopBic(),
                         ownBic, Bic.parse(p.creditorAgentBic()).value(), transfer.interbankAmount(), valueDate, transfer));
         String detail = "pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic()
+                + (r.system() != null ? " through " + r.system().name() + " (" + r.system().operatorBic() + ")"
+                + (p.serviceLevel() == ServiceLevel.NORM ? "" : ", " + p.serviceLevel()) : "")
                 + (pacs009 != null ? " · pacs.009 COV " + pacs009.msgId() + " → " + r.nextHopBic() : "")
                 + " · value date " + valueDate + rolled + "; booked to " + r.settlementAccountNumber()
                 + "; routed by " + r.describe() + ", SttlmMtd " + r.settlementMethod();
         return transitions.transition(p.id(), PaymentStatus.FUNDS_RESERVED, payment -> {
             payment.routed(r.instructedAgentBic(), r.settlementAccountId(), valueDate, r.ruleId(),
                     r.settlementMethod().name(), r.method() == RoutingMethod.COVER ? r.nextHopBic() : null);
+            if (r.system() != null) {
+                payment.throughSystem(r.system().code(), r.system().operatorBic());
+            }
             network.deliver(p.id(), pacs008);   // in the same transaction as SENT: both happen, or neither
             if (pacs009 != null) {
                 network.deliver(p.id(), pacs009);
@@ -295,7 +306,20 @@ public class PaymentProcessor {
                 // Only under CRED does our fee come out of what is sent; ChrgsInf then explains the difference.
                 p.chargeBearer() == ChargeBearer.CRED && fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of(),
                 p.chargeBearer(), valueDate, r.settlementMethod(),
-                r.method() == RoutingMethod.COVER ? r.nextHopBic() : null, List.of(), p.remittanceInfo());
+                r.method() == RoutingMethod.COVER ? r.nextHopBic() : null, List.of(), p.remittanceInfo(),
+                clearing(r, p.serviceLevel()));
+    }
+
+    /**
+     * Through a clearing system the pacs.008 names it (SttlmInf/ClrSys) and is addressed to its operator; the
+     * priority (urgent or normal) matters to an RTGS queue, LclInstrm INST makes it an instant payment.
+     */
+    static Clearing clearing(Router.Route r, ServiceLevel level) {
+        if (r.system() == null) {
+            return null;
+        }
+        String priority = level == ServiceLevel.HIGH ? "HIGH" : r.method() == RoutingMethod.RTGS ? "NORM" : null;
+        return new Clearing(r.system().code(), priority, level == ServiceLevel.INST, r.system().operatorBic());
     }
 
     /**
@@ -305,7 +329,7 @@ public class PaymentProcessor {
      */
     public Preview preview(String debtorAccount, String debtorName, String creditorName, String creditorAccount,
                            String creditorAgentBic, Money amount, ChargeBearer bearer, LocalDate requested,
-                           String endToEndId, String remittance) {
+                           String endToEndId, String remittance, ServiceLevel level) {
         List<String> notes = new ArrayList<>();
         String ccy = amount.currencyCode();
         Money fee = feeFor(ccy);
@@ -320,11 +344,13 @@ public class PaymentProcessor {
         }
         String instructed = creditorAgentBic;
         SettlementMethod method = SettlementMethod.INDA;
+        Clearing clearing = null;
         try {
-            Router.Outcome outcome = router.route(creditorAgentBic, ccy, valueDate);
+            Router.Outcome outcome = router.route(creditorAgentBic, ccy, valueDate, level);
             if (outcome.route().isPresent()) {
                 instructed = outcome.route().get().instructedAgentBic();
                 method = outcome.route().get().settlementMethod();
+                clearing = clearing(outcome.route().get(), level);
                 notes.add("Routed by " + outcome.route().get().describe());
             } else {
                 notes.add("No route: " + outcome.problem() + " (would be rejected CNOR)");
@@ -339,7 +365,7 @@ public class PaymentProcessor {
                 ownBic, creditorAgentBic, name, debtorAccount, creditorName, creditorAccount,
                 charges.interbankSettlementAmount(), amount,
                 bearer == ChargeBearer.CRED && fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of(), bearer,
-                valueDate, method, null, List.of(), remittance);
+                valueDate, method, null, List.of(), remittance, clearing);
         return new Preview(messaging.renderPacs008(t), notes);
     }
 

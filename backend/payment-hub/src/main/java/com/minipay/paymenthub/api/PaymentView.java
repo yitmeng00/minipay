@@ -37,5 +37,8 @@ public record PaymentView(
         String rejectionDetail,
         UUID reservationId,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        ServiceLevel serviceLevel,
+        String clearingSystem,
+        String viaBic) {
 }

@@ -70,8 +70,9 @@ public final class PaymentStateMachine {
 
         INCOMING.put(RECEIVED, EnumSet.of(VALIDATED, REJECTED));
         INCOMING.put(VALIDATED, EnumSet.of(SCREENED, REJECTED));
-        INCOMING.put(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, HELD_COMPLIANCE, REJECTED));
-        INCOMING.put(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, REJECTED)); // released: as from SCREENED
+        // ACKED for an instant payment to us: accepted to the scheme, credited when it confirms (ADR-008).
+        INCOMING.put(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, ACKED, HELD_COMPLIANCE, REJECTED));
+        INCOMING.put(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, ACKED, REJECTED)); // released: as from SCREENED
         INCOMING.put(FUNDS_RESERVED, EnumSet.noneOf(PaymentStatus.class));
         INCOMING.put(AWAITING_COVER, EnumSet.of(SETTLED, REJECTED));
         INCOMING.put(SENT, EnumSet.of(ACKED, SETTLED, REJECTED, RETURNED));

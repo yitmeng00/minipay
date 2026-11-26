@@ -136,6 +136,16 @@ public class Payment {
     @Column(name = "settlement_account_id")
     private Long settlementAccountId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "service_level", nullable = false)
+    private com.minipay.paymenthub.api.ServiceLevel serviceLevel = com.minipay.paymenthub.api.ServiceLevel.NORM;
+
+    @Column(name = "clearing_system")
+    private String clearingSystem;
+
+    @Column(name = "via_bic")
+    private String viaBic;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -275,6 +285,29 @@ public class Payment {
         settlementAccountId = settlementAccount;
         valueDate = settlementDate;
         routingRuleId = ruleId;
+    }
+
+    /** The customer's choice: normal, urgent or instant (ADR-008). */
+    public void serviceLevel(com.minipay.paymenthub.api.ServiceLevel level) {
+        serviceLevel = level == null ? com.minipay.paymenthub.api.ServiceLevel.NORM : level;
+    }
+
+    /** It went (or came) through a clearing system, whose operator is our counterpart for status reports. */
+    public void throughSystem(String system, String operatorBic) {
+        clearingSystem = system;
+        viaBic = operatorBic;
+    }
+
+    public com.minipay.paymenthub.api.ServiceLevel serviceLevel() {
+        return serviceLevel;
+    }
+
+    public String clearingSystem() {
+        return clearingSystem;
+    }
+
+    public String viaBic() {
+        return viaBic;
     }
 
     public void debtorName(String name) {

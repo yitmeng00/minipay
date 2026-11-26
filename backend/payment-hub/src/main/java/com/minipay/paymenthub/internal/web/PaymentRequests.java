@@ -23,7 +23,8 @@ final class PaymentRequests {
             @NotNull ChargeBearer chargeBearer,
             LocalDate requestedExecutionDate,
             @Size(max = 35) String endToEndId,
-            @Size(max = 140) String remittanceInformation) {
+            @Size(max = 140) String remittanceInformation,
+            com.minipay.paymenthub.api.ServiceLevel serviceLevel) {
     }
 
     record NetworkEventRequest(

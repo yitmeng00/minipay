@@ -49,8 +49,8 @@ class PaymentStateMachineTest {
     static final Map<PaymentStatus, Set<PaymentStatus>> INCOMING = Map.ofEntries(
             Map.entry(RECEIVED, EnumSet.of(VALIDATED, REJECTED)),
             Map.entry(VALIDATED, EnumSet.of(SCREENED, REJECTED)),
-            Map.entry(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, HELD_COMPLIANCE, REJECTED)),
-            Map.entry(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, REJECTED)),
+            Map.entry(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, ACKED, HELD_COMPLIANCE, REJECTED)),
+            Map.entry(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, ACKED, REJECTED)),
             Map.entry(FUNDS_RESERVED, NONE),
             Map.entry(AWAITING_COVER, EnumSet.of(SETTLED, REJECTED)),
             Map.entry(SENT, EnumSet.of(ACKED, SETTLED, REJECTED, RETURNED)),

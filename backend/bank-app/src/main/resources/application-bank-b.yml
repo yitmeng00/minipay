@@ -32,9 +32,18 @@ minipay:
       - { number: DE65500100600778812011, type: VOSTRO, currency: EUR, owner: "Vostro - Bank C (EUR)", counterparty-bic: MNPCGB2LXXX, opening-balance: 750000.00, funded-from: 1001-EUR-T2 }
       - { number: DE34500100600533190042, type: CUSTOMER, currency: EUR, owner: "Rheinwerk Logistik GmbH",   opening-balance: 1207450.25, funded-from: 1001-EUR-T2 }
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - correspondent charges EUR" }
+      # M7: our MiniPay Instant position at the central bank, prefunded from our T2 account (a liquidity
+      # transfer). Mirror of the operator's INST-MNPBDEFF; 1001-EUR-T2 mirrors its RTGS-MNPBDEFF.
+      - { number: 1002-EUR-INST, type: NOSTRO, currency: EUR, owner: "MiniPay Instant position (central bank)", counterparty-bic: MNCBDEFFXXX, opening-balance: 1000000.00, funded-from: 1001-EUR-T2 }
     # Bank B's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: EUR, method: DIRECT, settlement-account: DE87500100600778812003, priority: 10, from: "2024-01-01", release: v2024.01.1 }
       # Bank C in EUR: direct, on Bank C's vostro with us (we credit it on our books: SttlmMtd INGA).
       - { id: R-003, destination: "MNPCGB2L*", currency: EUR, method: DIRECT, settlement-account: DE65500100600778812011, priority: 10, from: "2024-01-01", release: v2024.01.1 }
       - { id: R-002, destination: "*",         currency: EUR, method: RTGS,   settlement-account: 1001-EUR-T2,            priority: 50, from: "2024-01-01", release: v2024.01.1 }
+      # M7 (ADR-008): the euro clearing systems. RTGS (R-002) now goes through T2 itself; normal payments go
+      # through the ACH, which is cheaper (urgent ones never do); instant payments only through MiniPay Instant.
+      # Bank C stays DIRECT on its vostro for normal and urgent payments (R-003, priority 10).
+      - { id: R-004, destination: "*",         currency: EUR, method: DNS,     settlement-account: 1001-EUR-T2,   priority: 40, from: "2026-11-25", release: v2026.11.9 }
+      - { id: R-005, destination: "MNPCGB2L*", currency: EUR, method: INSTANT, settlement-account: 1002-EUR-INST, priority: 15, from: "2026-11-25", release: v2026.11.9 }
+      - { id: R-006, destination: "*",         currency: EUR, method: INSTANT, settlement-account: 1002-EUR-INST, priority: 55, from: "2026-11-25", release: v2026.11.9 }

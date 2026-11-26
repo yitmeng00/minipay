@@ -45,8 +45,13 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
   inbound account; RJCT before booking, reversal + relay after; outcomes travel back hop by hop. State machine is
   per direction (OUTGOING/INCOMING tables). `minipay.network.participants` is comma-separated (read with @Value).
 - `NetworkE2EIT` runs all three banks in one JVM; pass overrides as command-line args (they outrank profile yml).
+- Compliance (M6, `compliance` module, depends only on `common`): hub screens via `ScreeningPort` → `ComplianceApi`
+  (VALIDATED → SCREENED → HELD_COMPLIANCE, both directions, every bank). One screening per payment (re-runs read it
+  back); case per hit; decisions lock the case row; release ≥ four-eyes threshold needs a 2nd person (DB trigger too).
+  Closing decision → `ComplianceDecisionMade` event after commit → hub resumes; sweeper covers HELD_COMPLIANCE.
+  Reject = RR04, RJCT AddtlInf only "Regulatory reason". Sanctions lists are fictional, effective-dated seed data.
 - `commons-lang3.version` is overridden in the parent POM (Prowide needs ≥ 3.18; Boot manages 3.17).
-- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network.
+- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance.
 
 ## Non-negotiable rules
 

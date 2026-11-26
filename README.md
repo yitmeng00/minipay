@@ -17,7 +17,7 @@ The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have vali
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance)
 design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     3 × PostgreSQL 16 (one per bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
@@ -27,8 +27,8 @@ backend/               Maven multi-module, Java 21, Spring Boot 3.5
   refdata/             Effective-dated BIC directory, IBAN registry, calendars, cut-offs, routing (M3)
   messaging/           pacs.008/002/004/009, camt.053/054, MT103 translation, raw message store (M4)
   network-simulator/   The network between the banks: inboxes and the UETR tracker (M5)
-  compliance/ settlement/ recon/
-                       Placeholders for M6–M8
+  compliance/          Sanctions screening against effective-dated lists, cases, four-eyes release (M6)
+  settlement/ recon/   Placeholders for M7–M8
   bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
@@ -344,6 +344,57 @@ In the console: open a payment and look at **Payment route**, or open **UETR tra
 payment the network carried. Switch the console to Bank B or Bank C to see the same payment from their
 side: incoming, passed on, or credited.
 
+### Sample calls: sanctions screening (all three banks)
+
+The (simulated, fictional) sanctions lists hold names that some creditors below resemble. Every bank
+screens every payment; a hit holds it in `HELD_COMPLIANCE` until officers decide. A release of a hit
+scoring 90 or more needs a second person.
+
+```bash
+A=localhost:8081/api; B=localhost:8082/api; C=localhost:8083/api; RUN=$(date +%s)
+pay() { curl -s -X POST $A/payments -H 'Content-Type: application/json' -H "Idempotency-Key: m6-$1-$RUN" -d "{
+  \"debtorAccount\": \"$2\", \"creditorName\": \"$3\", \"creditorAccount\": \"$4\", \"creditorAgentBic\": \"MNPCGB2LXXX\",
+  \"amount\": {\"amount\": \"$5\", \"currency\": \"$6\"}, \"chargeBearer\": \"SHAR\", \"remittanceInformation\": \"M6 $1\"}" \
+  | jq -r '"\(.uetr) \(.status)"'; }
+# decide BANK CASE ACTION REASON BY "COMMENT"
+decide() { curl -s -X POST $1/compliance/cases/$2/decisions -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: m6-$2-$3-$5" -d "{\"action\": \"$3\", \"reason\": $4, \"decidedBy\": \"$5\", \"comment\": \"$6\"}" \
+  | jq -r '"\(.status // .code)  \(.detail // "")"'; }
+caseOf() { curl -s $1/compliance/cases | jq -r --arg u "$2" '.[] | select(.uetr == $u) | .id'; }
+
+# 1. Payments from Bank A. Four of the creditors resemble (simulated) sanctions list entries; one is ordinary.
+read OAK _   <<< "$(pay oak  514087234412 'Oakridge Interiors Ltd'      GB20MNPC40051290550011 7840.00 EUR)"
+read HAL _   <<< "$(pay hal  514087234412 'Halvorsen Shipping AS'       GB23MNPC40051288779901 1890.00 EUR)"
+read PAC _   <<< "$(pay pac  514055218840 'Pacific Delta Minerals Ltd'  GB67MNPC40051271520093 6175.00 GBP)"
+read CRE _   <<< "$(pay cre  514087234412 'Crescent Marine Supplies Pte Ltd' GB23MNPC40051288779901 1426.00 EUR)"
+read OK  _   <<< "$(pay ok   514055218840 'Harlow & Finch Engineering Ltd'  GB67MNPC40051271520093 500.00 GBP)"
+for u in $OAK $HAL $PAC $CRE $OK; do echo "$u $(curl -s $A/payments/$u | jq -r .payment.status)"; done
+
+# 2. The queue at Bank A
+curl -s $A/compliance/cases | jq -r '.[] | "\(.bestScore)  \(.hits[0].partyName) ≈ \(.hits[0].matchedName) (\(.hits[0].entryId)) four-eyes=\(.fourEyes)"'
+
+# 3. Decisions at Bank A
+FP='"FALSE_POSITIVE"'; TM='"TRUE_MATCH"'
+decide $A $(caseOf $A $HAL) RELEASE $FP n.rahman "Different company: Norwegian org.nr 918 442 107, Bergen; the listed one is in Tromsø"
+decide $A $(caseOf $A $PAC) REJECT  $TM n.rahman "Registry and address match the listed mining company: refuse"
+OAKCASE=$(caseOf $A $OAK)
+decide $A $OAKCASE RELEASE $FP n.rahman "Different entity: UK company, Companies House 09811234, Leeds"
+decide $A $OAKCASE APPROVE null n.rahman "Approving my own release should be refused"   # FOUR_EYES
+decide $A $OAKCASE APPROVE null j.tan    "Checked Companies House: agree it is a different entity"
+sleep 3
+# 4. Oakridge now at Bank B: every bank screens for itself
+echo "Oakridge  A: $(curl -s $A/payments/$OAK | jq -r .payment.status)  B: $(curl -s $B/payments/$OAK | jq -r '.payment.status // "—"')"
+echo "Halvorsen A: $(curl -s $A/payments/$HAL | jq -r .payment.status)  B: $(curl -s $B/payments/$HAL | jq -r '.payment.status // "—"')"
+echo "Pacific   A: $(curl -s $A/payments/$PAC | jq -r '.payment.status + " " + .payment.rejectionReason')"
+echo "OAK=$OAK HAL=$HAL PAC=$PAC CRE=$CRE OK=$OK"
+```
+
+Then release Oakridge at Bank B (`k.weber` releases, `m.vogel` approves) and at Bank C (`o.hughes`,
+`r.patel`): only then is the creditor credited and the ACSC sent back to Bank A. In the console, open
+**Sanctions queue**, pick who you are at the bottom of the sidebar, and decide; switch to another person
+to approve. The lists: `GET /api/compliance/lists`, `GET /api/compliance/entries?list=OFAC` (without
+`asOf`, delisted entries are shown too). The audit file: `GET /api/compliance/decisions.csv?from=2026-11-26`.
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -524,6 +575,36 @@ backwards.
 **A tracker is an observer.** Like the gpi Tracker, it reads every message and builds the end-to-end
 picture: hops, deductions, confirmations, cover legs, returns. It never takes part in the payment.
 
+## What you should learn from M6 (compliance)
+
+**Screening happens before money moves, at every bank.** An outgoing payment is screened before its
+funds are reserved, an incoming one before anything is booked. So a held payment costs nothing to
+reject. No bank relies on another bank's screening: the same payment can be held at Bank A, then at
+Bank B, then at Bank C.
+
+**Matching names is fuzzy, and must be explainable.** "Oakridge Interiors Ltd" is not "OAKRIDGE
+INTERIORS TRADING FZE", but it is close enough to look. The engine:
+
+- ignores legal forms;
+- tolerates spelling, word order and split words;
+- weighs generic words (TRADING, MARINE) less.
+
+It then shows the analyst why it scored what it did: the matching words, the factors, the list entry
+side by side, and a hint. A different country never lowers the score: listed parties bank anywhere.
+
+**Lists are dated.** An entry is listed from one day and delisted on another. The screening records
+which list snapshot and which date it used, so "why did this payment pass in March?" has an answer.
+
+**Four eyes.** Letting a strong hit go needs two people, and the database refuses an approval by the
+person who released it. Every decision carries a reason and a comment of at least 20 characters,
+because the comment is the audit trail.
+
+**Say little when you refuse.** A rejection goes back as RR04, "regulatory reason", and nothing
+more: telling the sender it hit a sanctions list could tip off the listed party.
+
+**A decision resumes the payment, and the decision is the truth.** The hub hears about the decision
+through an event. If that event is lost, the recovery sweeper finds the released payment anyway.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -534,6 +615,6 @@ picture: hops, deductions, confirmations, cover legs, returns. It never takes pa
 | M3 | Reference data: effective-dated BIC directory, IBAN registry, routing rules, holidays, cut-offs; Overview and Reference data screens | ✅ |
 | M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 with loss report, raw store; Messages tab, pacs.008 preview | ✅ |
 | M5 | Network simulator: 3 banks over Kafka, incoming payments, hop-by-hop outcomes, serial and cover, UETR tracker; Payment route and tracker screens | ✅ |
-| M6 | Compliance: sanctions screening, 4-eyes release | |
+| M6 | Compliance: sanctions screening at every bank against dated lists, explainable fuzzy matching, cases, four-eyes release, RR04; Sanctions queue screen | ✅ |
 | M7 | Settlement: RTGS, deferred net settlement, instant | |
 | M8 | Reconciliation: camt.053 matching, breaks | |

@@ -337,8 +337,15 @@ public class PaymentProcessor {
         LocalDate today = businessDate();
         LocalDate valueDate = requested != null && requested.isAfter(today) ? requested : today;
         try {
-            LocalDate execution = refdata.nextBusinessDay(ccy, valueDate);
-            valueDate = refdata.valueDate(ccy, execution, clock.instant()).valueDate();
+            if (level == ServiceLevel.INST) {
+                // Instant: today in the scheme's time zone, any day and hour (as the send step does).
+                LocalDate d = valueDate;
+                valueDate = refdata.clearingSystem(RoutingMethod.INSTANT, ccy, today)
+                        .map(sys -> LocalDate.now(clock.withZone(ZoneId.of(sys.timeZone())))).orElse(d);
+            } else {
+                LocalDate execution = refdata.nextBusinessDay(ccy, valueDate);
+                valueDate = refdata.valueDate(ccy, execution, clock.instant()).valueDate();
+            }
         } catch (RefDataException e) {
             notes.add(e.getMessage());
         }

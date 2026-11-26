@@ -7,10 +7,8 @@ import { useTheme } from '../lib/theme'
 import { Icons } from './Icons'
 import { Chip } from './ui'
 
-type NavItem = { label: string; icon: () => ReactNode; to?: string; milestone?: string; count?: 'sanctions' | 'breaks' }
+type NavItem = { label: string; icon: () => ReactNode; to: string; count?: 'sanctions' | 'breaks' }
 
-// Screens from the design. Only those with a `to` are powered by a delivered milestone;
-// the rest are shown so the information architecture is visible, but are not clickable yet.
 const NAV: { section: string; items: NavItem[] }[] = [
   {
     section: 'Monitor',
@@ -54,8 +52,7 @@ function Sidebar() {
             <div className="px-2.5 pt-3.5 pb-1.5 text-[11px] font-semibold tracking-[.06em] text-muted uppercase">
               {group.section}
             </div>
-            {group.items.map((item) =>
-              item.to ? (
+            {group.items.map((item) => (
                 <NavLink
                   key={item.label}
                   to={item.to}
@@ -82,19 +79,7 @@ function Sidebar() {
                     </span>
                   )}
                 </NavLink>
-              ) : (
-                <span
-                  key={item.label}
-                  aria-disabled="true"
-                  title={`Arrives with milestone ${item.milestone}`}
-                  className="flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-[7px] font-medium text-muted opacity-60"
-                >
-                  <item.icon />
-                  {item.label}
-                  <span className="mono ml-auto text-[10px]">{item.milestone}</span>
-                </span>
-              ),
-            )}
+            ))}
           </div>
         ))}
       </nav>

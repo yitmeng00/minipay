@@ -587,18 +587,6 @@ export type InstantView = {
   feed: Transfer[]
 }
 
-export type ClearingSystem = {
-  code: string
-  name: string
-  kind: 'RTGS' | 'DNS' | 'INSTANT'
-  currency: string
-  operatorBic: string
-  timeZone: string
-  cutoff: string | null
-  cycleTimes: string[]
-  timeoutSeconds: number | null
-}
-
 // ---------------------------------------------------------------- reconciliation (M8): amounts signed, + = money in
 
 export type ReconNostro = {

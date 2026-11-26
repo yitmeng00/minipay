@@ -18,7 +18,7 @@ public enum PaymentStatus {
     VALIDATED,
     /** Sanctions screening done with no hit (or a hit that was cleared). */
     SCREENED,
-    /** Screening hit — waits for a compliance officer (4-eyes release in M6). */
+    /** Screening hit: waits for a compliance decision (four-eyes release above the threshold, ADR-007). */
     HELD_COMPLIANCE,
     /** Debtor's funds are on hold in the ledger. Warehoused payments wait here for their date. */
     FUNDS_RESERVED,

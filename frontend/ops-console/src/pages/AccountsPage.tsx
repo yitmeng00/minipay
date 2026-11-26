@@ -57,7 +57,7 @@ const FOOTNOTE: Record<AccountType, string> = {
   CUSTOMER:
     'Customer accounts are liabilities: a debit reduces what we owe the customer. Every line here has an equal and opposite line on the contra account.',
   NOSTRO:
-    'Nostro accounts are assets: a credit means money left our account at the correspondent. The correspondent’s camt.053 for this account is reconciled in M8.',
+    'Nostro accounts are assets: a credit means money left our account at the correspondent. The correspondent’s end-of-day camt.053 for this account is reconciled on the Reconciliation screen.',
   VOSTRO:
     'Vostro accounts are liabilities: the mirror image of the other bank’s nostro with us. A credit means we owe that bank more.',
   SUSPENSE:
@@ -65,7 +65,7 @@ const FOOTNOTE: Record<AccountType, string> = {
   FEE_INCOME: 'Fee income is profit & loss: credits are fees earned, debits are fees refunded or reversed.',
 }
 
-/** Display order from the design: customers, then nostros, vostros, and GL accounts last. */
+/** Display order: customers, then nostros, vostros, and GL accounts last. */
 const TYPE_ORDER: Record<AccountType, number> = { CUSTOMER: 0, NOSTRO: 1, VOSTRO: 2, FEE_INCOME: 3, SUSPENSE: 4 }
 
 function byTypeThenCurrency(a: Account, b: Account) {

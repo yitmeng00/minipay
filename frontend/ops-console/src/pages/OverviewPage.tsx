@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader, Chip, type Tone } from '../components/ui'
-import { useAccounts, useBankInfo, useComplianceStats, useCutoffs, useOverview } from '../lib/api'
+import { useAccounts, useBankInfo, useComplianceStats, useCutoffs, useNostros, useOverview } from '../lib/api'
 import { useBank } from '../lib/banks'
 import { REASON } from '../lib/iso'
 import { formatAmount, formatMoney } from '../lib/money'
@@ -106,8 +106,27 @@ function Kpis({ o }: { o: DailyOverview }) {
         note={o.rejectedByReason[0] ? `top ${o.rejectedByReason[0].reasonCode} · ${returned} returned` : `${returned} returned`}
       />
       <SanctionsKpi />
-      <Kpi label="Recon breaks" value="—" tag="M8" tone="neutral" note="arrives with reconciliation" />
+      <ReconKpi />
     </section>
+  )
+}
+
+/** Open reconciliation breaks over every nostro, against the servicers' statements. */
+function ReconKpi() {
+  const nostros = useNostros().data
+  if (!nostros) return <Kpi label="Recon breaks" value="—" tag="nostros" tone="neutral" note="loading…" />
+  const open = nostros.reduce((a, n) => a + n.openBreaks, 0)
+  const reconciled = nostros.filter((n) => n.lastDate).length
+  return (
+    <Link to="/reconciliation" className="text-fg no-underline">
+      <Kpi
+        label="Recon breaks"
+        value={open}
+        tag={open ? 'open' : 'none open'}
+        tone={open ? 'warn' : 'ok'}
+        note={`${reconciled} of ${nostros.length} nostros have a statement`}
+      />
+    </Link>
   )
 }
 
@@ -274,7 +293,7 @@ function Liquidity() {
       <CardHeader>
         <div>
           <h2 className="m-0 text-sm font-semibold">Liquidity position by currency</h2>
-          <span className="text-xs text-muted">Nostro and settlement accounts · minimum balances and funding alerts arrive with M7</span>
+          <span className="text-xs text-muted">Nostro and central bank accounts as our books show them · checked daily against the servicers’ statements</span>
         </div>
         <Link to="/accounts" className="text-xs font-medium text-accent no-underline">
           Accounts &amp; ledger →
@@ -325,7 +344,7 @@ function alertsFrom(o: DailyOverview, cutoffs: Cutoff[], currencies: Set<string>
     out.push({
       title: `${o.stuckInSent} payment${o.stuckInSent > 1 ? 's' : ''} stuck in SENT`,
       sev: 'Warning',
-      body: `No acknowledgement from the next bank after ${o.stuckAfterMinutes} min. Chase them, or wait for the network (M5).`,
+      body: `No acknowledgement from the next bank after ${o.stuckAfterMinutes} min. Look the UETR up in the tracker, then chase the next bank.`,
       action: { to: '/payments?tab=progress', label: 'View payments' },
     })
   }

@@ -37,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/payments")
-@Tag(name = "Payments", description = "Payment hub: create, track and (until M5) simulate network outcomes")
+@Tag(name = "Payments", description = "Payment hub: create and track payments, receive network messages, play banks outside the simulator")
 class PaymentController {
 
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";

@@ -3,6 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-11-24
 - **Milestone:** M0
+- **Amended by:** ADR-008 (M7): a fourth instance of the same application, the simulated central bank (profile
+  `operator`, its own database), runs the clearing systems
 
 ## Context
 
@@ -106,7 +108,7 @@ Rejected alternatives:
 
 ### 6. Frontend
 
-`frontend/ops-console` is React, TypeScript, Vite and Tailwind, using the design tokens from `design/`.
+`frontend/ops-console` is React, TypeScript, Vite and Tailwind; its design tokens (colours, type, spacing, light and dark) are in `src/index.css`.
 
 - It talks to each bank through same-origin proxy prefixes (`/bank-a/...`). The header's bank switcher changes the prefix.
 - Screens ship with the milestone that powers them. Navigation shows the later screens, disabled.

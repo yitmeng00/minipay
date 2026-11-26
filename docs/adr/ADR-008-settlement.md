@@ -190,7 +190,8 @@ payer reverses its booking. An RTGS carries nothing into the next day.
 **A bank's T2 mirror may go below zero.** A bank books its mirror when it sends. If its own books refused
 a payment the mirror cannot cover, the queue at T2 would never form: T2 is the one that knows the
 balance. So the mirror is allowed an overdraft. Between sending and settling, it differs from T2 by the
-payments still queued: an in-flight item, which M8 will reconcile.
+payments still queued: an in-flight item, which reconciliation reports as a timing break until it
+settles (ADR-009).
 
 ### 7. MiniPay Net: cycles, multilateral netting and unwinding
 
@@ -269,7 +270,7 @@ moved the money in and out.
 | Test | What it shows |
 |---|---|
 | `QueuePolicyTest` (5) | urgent first; urgent FIFO blocks; normal bypass; moving up; warehoused |
-| `NettingTest` (4) | the design's matrix (gross 39.80, bilateral 4.20, multilateral 1.90, positions summing to zero); a cycle settling whole; unwinding with its knock-on; an exact cover |
+| `NettingTest` (4) | a five-bank example matrix (gross 39.80, bilateral 4.20, multilateral 1.90, positions summing to zero); a cycle settling whole; unwinding with its knock-on; an exact cover |
 | `RouteSelectorTest` (+3) | instant-only routing, through the operator; a DNS rule with no DNS system is unusable and not skipped; a non-simulated RTGS |
 | `MxRoundTripTest` (+2) | ClrSys, InstrPrty and INST; a relayed Document is byte-identical |
 | `SettlementIT` (13) | real messages against a real PostgreSQL: gross settlement and the relay; queueing and liquidity flowing on; priority change with idempotency; cut-off rejection and TM01; the racing payments; CNOR and redelivery; a return; a DNS cycle netted and delivered after settlement; unwinding; instant accept, timeout (with a late accept), insufficient position, a simulated payee |

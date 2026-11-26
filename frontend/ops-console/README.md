@@ -1,24 +1,36 @@
 # MiniPay ops console
 
-React + TypeScript + Vite, styled with Tailwind using the design tokens from `design/` (light and dark).
-Data via TanStack Query; tables via TanStack Table v9.
+The operations console for the MiniPay simulator: React, TypeScript, Vite and Tailwind (light and dark
+themes, tokens in `src/index.css`), data through TanStack Query, tables through TanStack Table v9.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173 — proxies /bank-a → :8081, /bank-b → :8082, /bank-c → :8083
+npm run dev      # http://localhost:5173
 npm run build    # type-check + production build
+npm run lint     # oxlint
 ```
 
-The bank switcher in the header changes which bank's backend the console talks to.
+The dev server proxies each institution's backend under its own prefix, so the bank switcher in the
+header only changes the prefix (no CORS):
 
-| Screen | Status |
+| Prefix | Backend |
 |---|---|
-| Accounts & ledger | M1 — accounts with booked / reserved / available, statement per business date, active holds, trial balance |
-| Overview, Payments, Create payment | M2 |
-| Reference data | M3 |
-| Sanctions queue | M6 |
-| Settlement | M7 |
-| Reconciliation | M8 |
+| `/bank-a` | Bank A, http://localhost:8081 |
+| `/bank-b` | Bank B, http://localhost:8082 |
+| `/bank-c` | Bank C, http://localhost:8083 |
+| `/operator` | the central bank (clearing systems), http://localhost:8084 |
 
-Conventions: amounts arrive as decimal strings and are formatted without ever becoming JS numbers
-(`src/lib/money.ts`); every query key starts with the bank id so banks never share cached data.
+| Screen | What it shows |
+|---|---|
+| Overview | today's payments, throughput, liquidity, cut-offs, sanctions and reconciliation figures, alerts |
+| Payments, payment detail | the payments list; one payment's lifecycle, history, ledger entries, messages, screening and route |
+| UETR tracker | a payment's route end to end, from every bank's messages |
+| Sanctions queue | held payments, the hits explained, four-eyes decisions |
+| Settlement | T2 queue, MiniPay Net cycle and netting, MiniPay Instant feed (read from the central bank) |
+| Reconciliation | each nostro against its servicer's camt.053: matching, breaks, balance proof |
+| Create payment | a payment form with presets, service level and the pacs.008 it would produce |
+| Accounts & ledger | balances, statements, holds, the integrity check |
+| Reference data | BIC directory, IBAN check, routing rules and route tester, calendars and cut-offs |
+
+The person acting (for compliance decisions and break resolutions) is picked at the bottom of the
+sidebar: the simulator has no login.

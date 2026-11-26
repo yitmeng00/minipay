@@ -1,30 +1,63 @@
 # MiniPay
 
 A simulated cross-border payment network, built as a learning project. Three banks exchange
-ISO 20022 messages, and each runs its own ledger, payment hub, reference data, compliance,
-settlement and reconciliation.
+ISO 20022 messages over a simulated network. Each runs its own ledger, payment hub, reference
+data, sanctions screening and nostro reconciliation. A simulated central bank runs the euro clearing
+and settlement systems they settle through: an RTGS, a deferred net settlement ACH and an instant
+scheme.
 
 | Bank | City | BIC | Role | Port | Database |
 |---|---|---|---|---|---|
 | Bank A | Kuala Lumpur | `MNPAMYKLXXX` | Originating bank | 8081 | `localhost:5433/bank_a` |
 | Bank B | Frankfurt | `MNPBDEFFXXX` | EUR correspondent | 8082 | `localhost:5434/bank_b` |
 | Bank C | London | `MNPCGB2LXXX` | Beneficiary bank (GBP) | 8083 | `localhost:5435/bank_c` |
-| Central bank | Frankfurt | `MNCBDEFFXXX` | Runs T2, MiniPay Net and MiniPay Instant (M7) | 8084 | `localhost:5436/operator` |
+| Central bank | Frankfurt | `MNCBDEFFXXX` | Runs T2 (RTGS), MiniPay Net (DNS) and MiniPay Instant | 8084 | `localhost:5436/operator` |
 
 The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have valid formats (IBAN check digits included).
 
 **Status:** all milestones (M0–M8) are done. See the [delivery plan](#milestones).
 
+## Architecture at a glance
+
+- **One application, four instances.** `backend/bank-app` assembles every module. It runs once per
+  institution, chosen by Spring profile (`bank-a`, `bank-b`, `bank-c`, `operator`), each with its
+  own PostgreSQL. No instance reads another's database.
+- **Modules with hard boundaries.** Each module has a public `api` package and a private `internal`
+  package (ArchUnit enforces it), and owns one database schema with its own Flyway migrations.
+- **The network is Kafka.** Every institution has an inbox topic (`minipay.network.<BIC8>`). A
+  message leaves a bank only through its transactional outbox, in the same database transaction as the
+  status change that produces it, and the relay publishes it. Banks the simulator does not run (Paris,
+  Brussels) share `minipay.network.external`.
+- **Exactly once, built from at least once.**
+  - Kafka delivers at least once.
+  - Receivers de-duplicate: by the event id, and by (sender, MsgId) in the message store.
+  - Every write API takes an `Idempotency-Key`.
+  - Every ledger call carries a key derived from the payment and the step, so a step that crashes can
+    simply run again.
+- **What a payment goes through**:
+  - **at the sending bank:** validation against dated reference data, sanctions screening, a funds
+    hold, routing on the value date, booking, then a pacs.008 on the network;
+  - **at every bank on the way:** the same checks, then its leg is booked;
+  - **outcomes:** pacs.002 confirmations and rejections, and pacs.004 returns, travel back hop by hop.
+- **How it settles**, chosen by routing rule and service level:
+  - **correspondent accounts** (nostro/vostro): serial or cover;
+  - **T2:** gross, with a liquidity queue;
+  - **MiniPay Net:** netted in cycles;
+  - **MiniPay Instant:** within 10 seconds, on prefunded positions.
+- **Reconciliation.** Every night each servicer sends a camt.053 statement of every account it keeps
+  for another bank. The owner matches it against its own books, and its people work what does not match.
+
+The decisions behind each part are in [docs/adr](docs/adr): one ADR per milestone.
+
 ## Repository layout
 
 ```
 docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance, 008 settlement, 009 reconciliation)
-design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     4 × PostgreSQL 16 (one per bank, one for the central bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
   common/              Money, ISO 4217 minor units, UETR, BIC — no framework code
   ledger/              Double-entry ledger (M1)
-  payment-hub/          Payment lifecycle, state machine, idempotent API, outbox → Kafka (M2)
+  payment-hub/         Payment lifecycle, state machine, idempotent API, outbox → Kafka (M2)
   refdata/             Effective-dated BIC directory, IBAN registry, calendars, cut-offs, routing (M3)
   messaging/           pacs.008/002/004/009, camt.053/054, MT103 translation, raw message store (M4)
   network-simulator/   The network between the banks: inboxes and the UETR tracker (M5)
@@ -61,7 +94,10 @@ These rules are non-negotiable. The reasoning behind them is in [ADR-001](docs/a
 
 ## Running it
 
-**Prerequisites:** Java 21, Docker, and Node 20 or later. The Maven wrapper (`./mvnw`) downloads Maven itself.
+**Prerequisites:** Java 21, Docker (also for the tests: Testcontainers starts real PostgreSQL and
+Kafka), Node 20 or later, and `jq` for the sample calls. The Maven wrapper (`./mvnw`) downloads Maven
+itself. If `java -version` is not 21, point `JAVA_HOME` at a JDK 21. With Homebrew on macOS:
+`export JAVA_HOME=/opt/homebrew/opt/openjdk@21`.
 
 ```bash
 # 1. Infrastructure: four Postgres databases (three banks, the central bank) and Kafka
@@ -71,14 +107,17 @@ docker compose up -d
 cd backend
 ./mvnw verify
 
-# 3. Run Bank A (install once so bank-app can resolve the sibling modules)
+# 3. Run the four institutions, each in its own terminal (install once so bank-app can resolve the modules)
 ./mvnw install -DskipTests
-./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-a
-#   or: java -jar bank-app/target/bank-app-0.1.0-SNAPSHOT.jar --spring.profiles.active=bank-a
-#   (after changing another module, rebuild the jar with `./mvnw -pl bank-app clean package -DskipTests`:
-#    Spring Boot only repackages it when bank-app itself changed, so it can keep stale module jars)
-#   Banks B and C: the same command with bank-b / bank-c, in other terminals.
-#   The central bank (M7, the clearing systems): the same command with profile operator (port 8084).
+./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-a     # :8081
+./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-b     # :8082
+./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-c     # :8083
+./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=operator   # :8084, the central bank
+#   or: ./mvnw -pl bank-app clean package -DskipTests, then
+#       java -jar bank-app/target/bank-app-0.1.0-SNAPSHOT.jar --spring.profiles.active=bank-a  (and so on)
+#   (rebuild the jar with `clean package` after changing any module: Spring Boot only repackages it when
+#    bank-app itself changed, so it can keep stale module jars)
+#   Bank A alone works for the ledger, payments and reference data; payments leave it but nobody answers.
 
 # 4. Ops console (another terminal)
 cd frontend/ops-console
@@ -86,15 +125,27 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-On first start each bank **seeds** its chart of accounts and opening balances through the
-ledger API, and its routing table through the reference data import API. The seed lists are in
-`bank-app/src/main/resources/application-bank-*.yml`. Seeding is idempotent, so restarting changes
-nothing. The shared reference data (BIC directory, IBAN registry, calendars) comes with the refdata
-module's Flyway migrations.
+On first start each instance **seeds** its chart of accounts and opening balances through the
+ledger API, and a bank its routing table through the reference data import API. The seed lists are in
+`bank-app/src/main/resources/application-{bank-a,bank-b,bank-c,operator}.yml`, with the settings each
+profile overrides (BIC, time zone, fees, nostro master data for reconciliation, the central bank's
+participants). Seeding is idempotent, so restarting changes nothing.
 
-- **API docs:** http://localhost:8081/swagger-ui.html
+The shared reference data comes with the refdata module's Flyway migrations: the BIC directory, the
+IBAN registry, calendars, cut-offs and clearing systems. So do the simulated sanctions lists, with the
+compliance module's.
+
+- **API docs:** http://localhost:8081/swagger-ui.html (each instance on its own port)
 - **Health:** http://localhost:8081/actuator/health
 - **Start from scratch:** `docker compose down -v` deletes all four databases.
+
+**Timers** run by themselves:
+
+- the recovery sweeper, every bank, for payments stuck mid-pipeline;
+- the outbox relay;
+- the central bank: instant timeouts (4× a second), DNS cycle closes and the T2 cut-off (every 5 s),
+  and queue retries;
+- every servicer: yesterday's camt.053 statements, after its own midnight.
 
 ### Sample calls (Bank A)
 
@@ -169,17 +220,12 @@ UETR=$(jq -r .uetr /tmp/pay.json); ID=$(jq -r .id /tmp/pay.json)
 curl -s $P/$UETR | jq '.history[] | {to, actor, detail}'
 curl -s "localhost:8081/api/ledger/journal-entries?paymentId=$ID" | jq '.[] | {entryType, narrative}'
 
-# 3. Simulate the network (until M5): pacs.002 ACCP, settlement, then a pacs.004 return —
-#    AC04 "closed account", with EUR 25 of intermediary charges kept.
-for t in ACCEPTED SETTLED; do
-  curl -s -X POST $P/$UETR/network-events -H 'Content-Type: application/json' \
-    -H "Idempotency-Key: demo-$t-1" -d "{\"type\": \"$t\"}" | jq -r .status
-done
-curl -s -X POST $P/$UETR/network-events -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-ret-1' \
-  -d '{"type": "RETURNED", "reasonCode": "AC04", "returnedAmount": {"amount": "48225.00", "currency": "EUR"}}' \
-  | jq '{status, rejectionReason}'
+# 3. The network answers. With Banks B and C running, Bank B accepts it (ACSP) and passes it on; Bank C
+#    credits Harlow & Finch and confirms (ACSC), relayed by Bank B. With Bank A alone it stays SENT.
+sleep 4; curl -s $P/$UETR | jq -r '.payment.status, (.history[-2:][] | "\(.to): \(.detail)")'
 
-# 4. Illegal transition → 409 (a returned payment cannot be acknowledged)
+# 4. Playing a bank by hand (pacs.002/pacs.004 injected by the console) is only for banks the simulator
+#    does not run; Bank B answers for itself → 409
 curl -s -X POST $P/$UETR/network-events -H 'Content-Type: application/json' -H 'Idempotency-Key: demo-ack-2' \
   -d '{"type": "ACCEPTED"}' | jq '{status, code, detail}'
 
@@ -195,7 +241,7 @@ docker exec minipay-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
 ```
 
 In the console: http://localhost:5173/payments, then open a payment to see its lifecycle, ledger
-postings and audit log, or use **Create payment** with the scenario presets.
+postings, messages, screening, route and audit log, or use **Create payment** with the scenario presets.
 
 ### Sample calls: reference data (Bank A)
 
@@ -260,7 +306,7 @@ figures and each currency's cut-off in the bank's local time.
 
 ### Sample calls: messages (Bank A)
 
-Every step can be run again: the keys include a timestamp.
+Run with Banks A and B (and C) up. Every step can be run again: the keys include a timestamp.
 
 ```bash
 P=localhost:8081/api/payments; M=localhost:8081/api/messages; RUN=$(date +%s)
@@ -279,23 +325,23 @@ curl -s $M/$ID/raw | sed -n '1,4p'
 curl -s $M/$ID/mt103 | jq -r '.target'
 curl -s $M/$ID/mt103 | jq -c '.fields[] | select(.fidelity != "EQUIVALENT") | {mtTag, mxPath, fidelity, note}'
 
-# 3. Bank B acknowledges it: a pacs.002 ACCP, simulated until M5 but received like a real message
-curl -s -X POST $P/$UETR/network-events -H 'Content-Type: application/json' -H "Idempotency-Key: m4-ack-$RUN" \
-  -d '{"type": "ACCEPTED"}' | jq -c '{status}'
+# 3. Bank B acknowledges it over the network: a pacs.002 ACSP, stored as received
+sleep 3
 curl -s "$M?uetr=$UETR" | jq -c '.[] | {type, direction, msgId, senderBic, status, originalMsgId}'
 
 # 4. Resend Bank B's pacs.002 to the inbound endpoint: recognised by sender + MsgId, nothing changes
-ACK=$(curl -s "$M?uetr=$UETR" | jq -r '.[] | select(.type == "PACS_002") | .id')
+ACK=$(curl -s "$M?uetr=$UETR" | jq -r '[.[] | select(.type == "PACS_002" and .status == "ACSP")][0].id')
 curl -s $M/$ACK/raw > /tmp/pacs002.xml
 curl -si -X POST $P/inbound -H 'Content-Type: application/xml' -H "Idempotency-Key: m4-resend-$RUN" \
   --data-binary @/tmp/pacs002.xml | grep -iE "^HTTP|replayed"
 
 # 5. A broken message is refused (422) but kept, marked INVALID, with every error listed
-sed 's/<pacs:TxSts>ACCP/<pacs:TxSts>NOPE/; s/-002-/-002-X/g' /tmp/pacs002.xml > /tmp/bad.xml
+sed 's/<pacs:TxSts>ACSP/<pacs:TxSts>NOPE/; s/-002-/-002-X/g' /tmp/pacs002.xml > /tmp/bad.xml
 curl -s -X POST $P/inbound -H 'Content-Type: application/xml' -H "Idempotency-Key: m4-bad-$RUN" \
   --data-binary @/tmp/bad.xml | jq -c '{status, code, detail}'
 
-# 6. Bank B issues a camt.053 for Bank A's vostro (what Bank A reconciles in M8)
+# 6. Bank B issues (but does not send) a camt.053 for Bank A's vostro; the nightly statements are sent
+#    by reconciliation, see "Sample calls: reconciliation"
 VOSTRO=$(curl -s "localhost:8082/api/ledger/accounts?type=VOSTRO" | jq '.[0].id')
 curl -s -X POST localhost:8082/api/messages/camt053 -H 'Content-Type: application/json' \
   -H "Idempotency-Key: m4-stmt-$RUN" -d "{\"accountId\": $VOSTRO}" | jq -c '{type, msgId, receiverBic, account, closingBalance: .amount}'
@@ -482,6 +528,25 @@ row for the camt.053 entry and why it matched), the balance proof, and the break
 suggested resolutions. Bank B's `1001-EUR-T2` shows a DNS cycle's net entry matched against its gross
 payments (Batch).
 
+## Tests
+
+```bash
+cd backend && ./mvnw verify                                        # everything below
+cd frontend/ops-console && npm run build && npm run lint           # type-check, production build, oxlint
+```
+
+| Kind | Naming | What |
+|---|---|---|
+| Unit | `*Test` | domain logic without Spring: Money, state machines, route selection, value dating, IBAN checks, name matching, queue policy, netting, statement matching, message round trips, MT103 translation |
+| Integration | `*IT` | each module against real PostgreSQL (Testcontainers, never H2): idempotency, database guards, concurrency, crash safety |
+| End to end | `NetworkE2EIT` | the four institutions in one JVM over one Kafka (each with its own PostgreSQL), driven through the network only: serial, cover, direct, return, rejection, compliance holds at every bank, T2, a DNS cycle, instant (accepted and timed out), a return through T2, and every nostro reconciled |
+| Architecture | `ModuleBoundariesTest` | ArchUnit: no module touches another's `internal`, no cycles, Kafka only in the outbox relay and the network inboxes |
+
+The concurrency and crash-safety tests were each proved by mutation: remove the lock, the derived key
+or the replay they protect, and the test fails. `NetworkE2EIT` passes its overrides as command-line
+arguments, because those outrank the profiles' own settings (ports, datasource, Kafka). CI
+(`.github/workflows/ci.yml`) runs the backend build and the console's build and lint on every push.
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -494,7 +559,8 @@ still balance. Look at the statement footnotes in the console, and at `AccountTy
 
 **Nostro and vostro are two views of one relationship.** Bank A's nostro `1101-EUR-MNPB` and
 Bank B's vostro for Bank A (`DE87…2003`) hold the same EUR 2,899,613.17. Every cross-border
-payment moves both, and checking that they still agree is nostro reconciliation (M8).
+payment moves both, and checking that they still agree is nostro reconciliation (M8, the
+Reconciliation screen).
 
 **Booked, reserved, available.**
 - *Booked* is what has really happened.
@@ -627,8 +693,8 @@ cannot restore it. The translator says field by field what was kept, transformed
 That is why CBPR+ limits InstrId to 16 characters while both formats are in use.
 
 **Statements are written for the account holder.** A camt.053 for a vostro tells the other bank what
-moved on its account with us. In M8 that bank compares it with its own nostro. That comparison is
-reconciliation.
+moved on its account with us. That bank compares it with its own nostro: that comparison is
+reconciliation (M8).
 
 ## What you should learn from M5 (network)
 
@@ -697,7 +763,7 @@ through an event. If that event is lost, the recovery sweeper finds the released
 **Interbank money moves on someone else's books.** Between correspondents it moves on nostro and vostro
 accounts. In a settlement system it moves on accounts at the central bank, which keeps the only set of
 books that counts. That is why the simulator has a fourth instance. Each bank keeps a mirror of its
-account there, and the mirror must match: M8 checks it.
+account there, and the mirror must match: reconciliation (M8) checks it.
 
 **Gross, net, instant: three answers to "how much liquidity, and when is it final?"**
 

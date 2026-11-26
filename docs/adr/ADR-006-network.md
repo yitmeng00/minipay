@@ -98,7 +98,7 @@ A bank only ever talks to its neighbours. An outcome therefore travels back the 
 - **pacs.004 return.** The creditor's bank returns what it credited (its own charge is not refunded)
   and lists every deduction in ChrgsInf. Each intermediary books the return back across the same two
   accounts, adds its own charge to the list, and passes the return on. The debtor's bank credits its
-  customer (ADR-003 §11). In the design's example, A sent 48,250, B kept 15 and C kept 10, so 48,225
+  customer (ADR-003 §11). For example, A sent 48,250, B kept 15 and C kept 10, so 48,225
   comes back.
 - **Sender check.** A status or return is accepted only from the bank we sent the payment to, or from
   its cover agent.
@@ -160,7 +160,7 @@ Per UETR it derives the route:
 - **Status:** ACSC (the creditor's bank confirmed), RJCT (a rejection reached the debtor's bank), RTND
   (a return reached it), else ACSP (on its way).
 
-The console shows it as the design's **Payment route** card on every payment, and on a tracker page
+The console shows it as a **Payment route** card on every payment, and on a tracker page
 for any UETR.
 
 ### 7. Testing the network

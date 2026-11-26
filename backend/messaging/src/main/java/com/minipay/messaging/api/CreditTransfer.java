@@ -3,16 +3,24 @@ package com.minipay.messaging.api;
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.common.money.Money;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Everything a pacs.008 carries for one customer credit transfer.
+ * Everything a pacs.008 carries for one customer credit transfer, on one hop of its route.
  *
- * @param instructingAgentBic who sends this message (InstgAgt; us for an outgoing payment)
+ * <p>On each hop the instructing and instructed agents change and the interbank amount may shrink
+ * (under SHAR and CRED every bank deducts its charge). The UETR, end-to-end id, parties and instructed
+ * amount travel unchanged from end to end.
+ *
+ * @param instructingAgentBic who sends this message (InstgAgt)
  * @param instructedAgentBic  who receives it (InstdAgt): the next bank on the route
- * @param interbankAmount     IntrBkSttlmAmt: what moves between the banks
+ * @param interbankAmount     IntrBkSttlmAmt on this hop
  * @param instructedAmount    InstdAmt: what the debtor instructed
- * @param ourCharges          charges taken by the instructing agent (ChrgsInf), zero if none
+ * @param charges             ChrgsInf: every deduction so far, in route order
+ * @param coverAgentBic       for SttlmMtd COVE, the bank through which the money travels separately
+ *                            (InstgRmbrsmntAgt); null otherwise
+ * @param previousAgents      PrvsInstgAgt1..3: banks before the instructing agent, oldest first
  */
 public record CreditTransfer(
         String uetr,
@@ -28,10 +36,12 @@ public record CreditTransfer(
         String creditorAccount,
         Money interbankAmount,
         Money instructedAmount,
-        Money ourCharges,
+        List<Charge> charges,
         ChargeBearer chargeBearer,
         LocalDate settlementDate,
         SettlementMethod settlementMethod,
+        String coverAgentBic,
+        List<String> previousAgents,
         String remittanceInformation) {
 
     public CreditTransfer {
@@ -42,5 +52,7 @@ public record CreditTransfer(
         Objects.requireNonNull(chargeBearer, "chargeBearer");
         Objects.requireNonNull(settlementDate, "settlementDate");
         Objects.requireNonNull(settlementMethod, "settlementMethod");
+        charges = charges == null ? List.of() : List.copyOf(charges);
+        previousAgents = previousAgents == null ? List.of() : List.copyOf(previousAgents);
     }
 }

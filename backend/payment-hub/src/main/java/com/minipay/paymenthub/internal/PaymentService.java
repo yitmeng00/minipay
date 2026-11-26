@@ -9,6 +9,7 @@ import com.minipay.ledger.api.EntryType;
 import com.minipay.ledger.api.LedgerApi;
 import com.minipay.ledger.api.PostEntryCommand;
 import com.minipay.ledger.api.PostingLine;
+import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.InboundMessage;
 import com.minipay.messaging.api.MessageDirection;
 import com.minipay.messaging.api.MessageType;
@@ -216,7 +217,7 @@ public class PaymentService implements PaymentHubApi {
                 yield messaging.buildPacs004(new PaymentReturn(p.instructedAgentBic(), bankBic,
                         "RTN-" + p.instructionId(), originalMsgId, p.instructionId(), p.endToEndId(), p.uetr().toString(),
                         sent, returned, processor.businessDate(),
-                        kept.isPositive() ? List.of(new PaymentReturn.Charge(kept, p.instructedAgentBic())) : List.of(),
+                        kept.isPositive() ? List.of(new Charge(kept, p.instructedAgentBic())) : List.of(),
                         event.reasonCode(), event.reference()));
             }
         };

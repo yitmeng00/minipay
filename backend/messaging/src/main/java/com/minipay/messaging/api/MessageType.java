@@ -5,7 +5,9 @@ public enum MessageType {
     PACS_008("pacs.008.001.08", "FI to FI customer credit transfer"),
     PACS_002("pacs.002.001.10", "Payment status report"),
     PACS_004("pacs.004.001.09", "Payment return"),
+    PACS_009("pacs.009.001.08", "FI credit transfer (cover)"),
     CAMT_053("camt.053.001.08", "Bank to customer statement"),
+    CAMT_054("camt.054.001.08", "Debit/credit notification"),
     MT103("MT103", "Single customer credit transfer (SWIFT FIN)");
 
     private final String identifier;

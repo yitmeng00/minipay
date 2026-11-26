@@ -4,7 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.minipay.common.money.Money;
 import com.minipay.messaging.Fixtures;
+import com.minipay.messaging.api.Charge;
+import com.minipay.messaging.api.CoverTransfer;
+import com.minipay.messaging.api.CreditNotification;
+import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.MessageType;
+import com.minipay.messaging.api.SettlementMethod;
+import com.prowidesoftware.swift.model.mx.AbstractMX;
+import com.prowidesoftware.swift.model.mx.MxCamt05400108;
+import com.prowidesoftware.swift.model.mx.MxPacs00800108;
+import com.prowidesoftware.swift.model.mx.MxPacs00900108;
 import com.minipay.messaging.api.PaymentReturn;
 import com.minipay.messaging.api.StatusReport;
 import com.minipay.messaging.api.TransactionStatus;
@@ -91,8 +100,8 @@ class MxRoundTripTest {
         String raw = Mx.render(Pacs004Writer.build(new PaymentReturn("MNPBDEFFXXX", "MNPAMYKLXXX", "MNPC-RTN-0071",
                 "MNPA20261124-008-000912", "MNPA261124000912", "INV-HF-2026-1187", Fixtures.UETR,
                 Money.of("48250.00", "EUR"), Money.of("48225.00", "EUR"), LocalDate.of(2026, 11, 24),
-                List.of(new PaymentReturn.Charge(Money.of("15.00", "EUR"), "MNPBDEFFXXX"),
-                        new PaymentReturn.Charge(Money.of("10.00", "EUR"), "MNPCGB2LXXX")),
+                List.of(new Charge(Money.of("15.00", "EUR"), "MNPBDEFFXXX"),
+                        new Charge(Money.of("10.00", "EUR"), "MNPCGB2LXXX")),
                 "AC04", "Creditor account closed 2026-10-31"), "MNPB20261124-004-003317", Fixtures.CREATED));
         MxReader.Parsed p = MxReader.read(raw, "MNPAMYKLXXX");
         assertThat(p.errors()).isEmpty();
@@ -109,5 +118,60 @@ class MxRoundTripTest {
                 Fixtures.UETR, Money.of("100.00", "EUR"), Money.of("100.01", "EUR"), LocalDate.of(2026, 11, 24),
                 List.of(), "AC04", null), "MNPB20261124-004-000002", Fixtures.CREATED));
         assertThat(MxReader.read(raw, "MNPAMYKLXXX").errors()).containsExactly("Returned amount EUR 100.01 exceeds the original EUR 100.00");
+    }
+
+    @Test
+    void a_forwarded_pacs008_carries_the_charge_chain_and_the_previous_agent() {
+        CreditTransfer f = Fixtures.transfer();
+        // Bank B forwards to Bank C: B is now the instructing agent, A a previous one, and B took EUR 15.
+        CreditTransfer fwd = new CreditTransfer(f.uetr(), "MNPB261124000001", f.endToEndId(), "MNPBDEFFXXX", "MNPCGB2LXXX",
+                f.debtorAgentBic(), f.creditorAgentBic(), f.debtorName(), f.debtorAccount(), f.creditorName(),
+                f.creditorAccount(), Money.of("48235.00", "EUR"), f.instructedAmount(),
+                List.of(new Charge(Money.of("15.00", "EUR"), "MNPBDEFFXXX")), f.chargeBearer(), f.settlementDate(),
+                SettlementMethod.INGA, null, List.of("MNPAMYKLXXX"), f.remittanceInformation());
+        String raw = Mx.render(Pacs008Writer.build(fwd, "MNPB20261124-008-000001", Fixtures.CREATED));
+        assertThat(MxReader.read(raw, "MNPCGB2LXXX").errors()).isEmpty();
+        CreditTransfer back = TransferReader.pacs008((MxPacs00800108) AbstractMX.parse(raw));
+        assertThat(back).isEqualTo(fwd);
+    }
+
+    @Test
+    void a_cover_pacs008_names_its_reimbursement_agent() {
+        CreditTransfer f = Fixtures.transfer();
+        CreditTransfer cover = new CreditTransfer(f.uetr(), f.instructionId(), f.endToEndId(), "MNPAMYKLXXX", "MNPCGB2LXXX",
+                f.debtorAgentBic(), f.creditorAgentBic(), f.debtorName(), f.debtorAccount(), f.creditorName(),
+                f.creditorAccount(), f.interbankAmount(), f.instructedAmount(), List.of(), f.chargeBearer(),
+                f.settlementDate(), SettlementMethod.COVE, "MNPBDEFFXXX", List.of(), null);
+        String raw = Mx.render(Pacs008Writer.build(cover, "MNPA20261124-008-000002", Fixtures.CREATED));
+        assertThat(raw).contains("<pacs:SttlmMtd>COVE</pacs:SttlmMtd>").containsPattern("<pacs:InstgRmbrsmntAgt>\\s*<pacs:FinInstnId>\\s*<pacs:BICFI>MNPBDEFFXXX");
+        assertThat(TransferReader.pacs008((MxPacs00800108) AbstractMX.parse(raw)).coverAgentBic()).isEqualTo("MNPBDEFFXXX");
+    }
+
+    @Test
+    void pacs009_cov_carries_the_underlying_customer_payment() {
+        CoverTransfer c = new CoverTransfer(Fixtures.UETR, "MNPA261124000912", "INV-HF-2026-1187", "MNPAMYKLXXX",
+                "MNPBDEFFXXX", "MNPAMYKLXXX", "MNPCGB2LXXX", Money.of("48250.00", "EUR"), LocalDate.of(2026, 11, 24),
+                Fixtures.transfer());
+        String raw = Mx.render(Pacs009Writer.build(c, "MNPA20261124-009-000003", Fixtures.CREATED));
+        MxReader.Parsed p = MxReader.read(raw, "MNPBDEFFXXX");
+        assertThat(p.errors()).isEmpty();
+        assertThat(p.type()).isEqualTo(MessageType.PACS_009);
+        CoverTransfer back = TransferReader.pacs009((MxPacs00900108) AbstractMX.parse(raw));
+        assertThat(back.creditorBic()).isEqualTo("MNPCGB2LXXX");
+        assertThat(back.underlying().creditorName()).isEqualTo("Harlow & Finch Engineering Ltd");
+        assertThat(back.underlying().creditorAccount()).isEqualTo("GB96MNPC60161331926819");
+    }
+
+    @Test
+    void camt054_notifies_a_credit_with_the_uetr_to_match_on() {
+        CreditNotification n = new CreditNotification("MNPBDEFFXXX", "MNPCGB2LXXX", "DE58500100600099887766",
+                Money.of("48250.00", "EUR"), LocalDate.of(2026, 11, 24), Fixtures.CREATED.toInstant(), Fixtures.UETR,
+                "INV-HF-2026-1187", "MNPA261124000912", "REF1");
+        String raw = Mx.render(Camt054Writer.build(n, "MNPB20261124-054-000004", Fixtures.CREATED, java.time.ZoneId.of("Europe/Berlin")));
+        MxReader.Parsed p = MxReader.read(raw, "MNPCGB2LXXX");
+        assertThat(p.errors()).isEmpty();
+        assertThat(p.uetr()).isEqualTo(Fixtures.UETR);
+        assertThat(p.status()).isEqualTo("CRDT");
+        assertThat(TransferReader.camt054((MxCamt05400108) AbstractMX.parse(raw))).isEqualTo(n);
     }
 }

@@ -40,7 +40,7 @@ public final class Pacs004Writer {
                 .setChrgBr(ChargeBearerType1Code.CRED)
                 .setInstgAgt(Mx.agent(r.fromBic()))
                 .setInstdAgt(Mx.agent(r.toBic()));
-        for (PaymentReturn.Charge c : r.charges()) {
+        for (com.minipay.messaging.api.Charge c : r.charges()) {
             tx.addChrgsInf(new Charges7().setAmt(Mx.amount(c.amount())).setAgt(Mx.agent(c.agentBic())));
         }
         PaymentReturnReason6 reason = new PaymentReturnReason6().setRsn(new ReturnReason5Choice().setCd(r.reasonCode()));

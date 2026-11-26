@@ -149,7 +149,7 @@ class PaymentMessagingIT extends PaymentHubIntegrationTest {
         hub.receiveMessage(key(), statusFrom(BANK_B, p, TransactionStatus.ACSC));
         String pacs004 = messaging.buildPacs004(new PaymentReturn(BANK_B, "MNPAMYKLXXX", "MNPC-RTN-1", pacs008(p).msgId(),
                 p.instructionId(), p.endToEndId(), p.uetr(), eur("1000.00"), eur("975.00"), LocalDate.of(2026, 11, 24),
-                List.of(new PaymentReturn.Charge(eur("25.00"), BANK_B)), "AC04", "Account closed"));
+                List.of(new com.minipay.messaging.api.Charge(eur("25.00"), BANK_B)), "AC04", "Account closed"));
 
         PaymentView returned = hub.receiveMessage(key(), pacs004).value();
         hub.receiveMessage(key(), pacs004);

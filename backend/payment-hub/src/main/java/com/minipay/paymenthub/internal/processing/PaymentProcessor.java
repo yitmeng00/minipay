@@ -15,6 +15,7 @@ import com.minipay.ledger.api.ReserveFundsCommand;
 import com.minipay.ledger.api.SettleReservationCommand;
 import com.minipay.ledger.api.SettlementLeg;
 import com.minipay.common.iso.ChargeBearer;
+import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.MessageView;
 import com.minipay.messaging.api.MessagingApi;
@@ -251,8 +252,9 @@ public class PaymentProcessor {
                 p.debtorAgentBic(), p.creditorAgentBic(), p.debtorName(), p.debtorAccount(), p.creditorName(),
                 p.creditorAccount(), Money.of(p.interbankSettlementAmount(), p.currency()), amount,
                 // Only under CRED does our fee come out of what is sent; ChrgsInf then explains the difference.
-                p.chargeBearer() == ChargeBearer.CRED ? fee : Money.zero(p.currency()),
-                p.chargeBearer(), valueDate, r.settlementMethod(), p.remittanceInfo());
+                p.chargeBearer() == ChargeBearer.CRED && fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of(),
+                p.chargeBearer(), valueDate, r.settlementMethod(),
+                r.method() == RoutingMethod.COVER ? r.nextHopBic() : null, List.of(), p.remittanceInfo());
     }
 
     /**
@@ -295,7 +297,8 @@ public class PaymentProcessor {
                 ownBic.substring(0, 4) + "PREVIEW", endToEndId == null ? "NOTPROVIDED" : endToEndId, ownBic, instructed,
                 ownBic, creditorAgentBic, name, debtorAccount, creditorName, creditorAccount,
                 charges.interbankSettlementAmount(), amount,
-                bearer == ChargeBearer.CRED ? fee : Money.zero(ccy), bearer, valueDate, method, remittance);
+                bearer == ChargeBearer.CRED && fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of(), bearer,
+                valueDate, method, null, List.of(), remittance);
         return new Preview(messaging.renderPacs008(t), notes);
     }
 

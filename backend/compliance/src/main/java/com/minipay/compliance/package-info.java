@@ -1,7 +1,9 @@
 /**
- * Compliance: Sanctions screening against an OFAC SDN sample and 4-eyes release of held payments.
+ * Compliance: sanctions screening of every payment, cases for hits, and four-eyes release (M6, ADR-007).
  *
- * <p>Placeholder module — implemented in milestone M6. Follows the same layout as {@code ledger}:
- * {@code com.minipay.compliance.api} is the public contract, {@code com.minipay.compliance.internal} is private.
+ * <p>{@code com.minipay.compliance.api} is the public contract, {@code com.minipay.compliance.internal} is
+ * private. The module depends on nothing but {@code common}: the payment hub calls it, never the reverse.
+ * When a decision closes a case it publishes {@link com.minipay.compliance.api.ComplianceDecisionMade}, an
+ * in-process event the hub listens to.
  */
 package com.minipay.compliance;

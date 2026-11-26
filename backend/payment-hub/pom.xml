@@ -33,6 +33,10 @@
             <artifactId>refdata</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>compliance</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>

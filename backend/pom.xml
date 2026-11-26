@@ -63,6 +63,11 @@
             </dependency>
             <dependency>
                 <groupId>com.minipay</groupId>
+                <artifactId>compliance</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.minipay</groupId>
                 <artifactId>messaging</artifactId>
                 <version>${project.version}</version>
             </dependency>

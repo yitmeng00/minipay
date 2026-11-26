@@ -25,10 +25,14 @@ import org.springframework.stereotype.Component;
 public class RecoverySweeper {
 
     private static final Logger log = LoggerFactory.getLogger(RecoverySweeper.class);
-    /** Before the payment left us, plus incoming payments waiting for their cover (re-checked when stale). */
+    /**
+     * Before the payment left us, plus incoming payments waiting for their cover and payments held for
+     * compliance (re-checked when stale: a decision committed but not acted on — the process died, or
+     * resuming failed — is acted on here).
+     */
     private static final EnumSet<PaymentStatus> IN_FLIGHT = EnumSet.of(
-            PaymentStatus.RECEIVED, PaymentStatus.VALIDATED, PaymentStatus.SCREENED, PaymentStatus.FUNDS_RESERVED,
-            PaymentStatus.AWAITING_COVER);
+            PaymentStatus.RECEIVED, PaymentStatus.VALIDATED, PaymentStatus.SCREENED, PaymentStatus.HELD_COMPLIANCE,
+            PaymentStatus.FUNDS_RESERVED, PaymentStatus.AWAITING_COVER);
 
     private final PaymentRepository payments;
     private final PaymentProcessor processor;

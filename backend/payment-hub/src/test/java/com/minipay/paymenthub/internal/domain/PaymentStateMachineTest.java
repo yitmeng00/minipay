@@ -50,7 +50,7 @@ class PaymentStateMachineTest {
             Map.entry(RECEIVED, EnumSet.of(VALIDATED, REJECTED)),
             Map.entry(VALIDATED, EnumSet.of(SCREENED, REJECTED)),
             Map.entry(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, HELD_COMPLIANCE, REJECTED)),
-            Map.entry(HELD_COMPLIANCE, EnumSet.of(REJECTED)),
+            Map.entry(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, REJECTED)),
             Map.entry(FUNDS_RESERVED, NONE),
             Map.entry(AWAITING_COVER, EnumSet.of(SETTLED, REJECTED)),
             Map.entry(SENT, EnumSet.of(ACKED, SETTLED, REJECTED, RETURNED)),
@@ -91,6 +91,16 @@ class PaymentStateMachineTest {
     void an_incoming_cover_payment_is_paid_out_only_from_awaiting_cover_or_after_screening() {
         assertThat(PaymentStateMachine.allowedFrom(PaymentDirection.INCOMING, AWAITING_COVER)).containsOnly(SETTLED, REJECTED);
         assertThat(PaymentStateMachine.canTransition(PaymentDirection.INCOMING, VALIDATED, SETTLED)).isFalse();
+    }
+
+    @Test
+    void a_held_payment_leaves_only_by_a_decision_and_never_goes_back_to_screening() {
+        for (PaymentDirection d : PaymentDirection.values()) {
+            assertThat(PaymentStateMachine.canTransition(d, HELD_COMPLIANCE, SCREENED)).isFalse();
+            assertThat(PaymentStateMachine.canTransition(d, HELD_COMPLIANCE, REJECTED)).isTrue();
+            assertThat(PaymentStateMachine.canTransition(d, VALIDATED, HELD_COMPLIANCE)).isFalse(); // screened first
+        }
+        assertThat(PaymentStateMachine.allowedFrom(PaymentDirection.OUTGOING, HELD_COMPLIANCE)).containsOnly(FUNDS_RESERVED, REJECTED);
     }
 
     @Test

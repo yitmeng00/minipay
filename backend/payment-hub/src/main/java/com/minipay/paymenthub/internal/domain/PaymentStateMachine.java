@@ -31,7 +31,8 @@ import java.util.Set;
  *
  * <h2>Outgoing (we are the debtor's bank)</h2>
  * <ul>
- *   <li>HELD_COMPLIANCE is entered from SCREENED (a screening hit) and left by a compliance decision.</li>
+ *   <li>HELD_COMPLIANCE is entered from SCREENED (a screening hit) and left only by a compliance decision
+ *       (ADR-007): released → FUNDS_RESERVED, rejected → REJECTED (RR04). Nothing is reserved while held.</li>
  *   <li>After SENT the next banks decide: an ACSP/ACCP acknowledges (ACKED), the creditor's bank's
  *       ACSC confirms (SETTLED, possibly without an acknowledgement first), a RJCT from a bank further
  *       on rejects (REJECTED: our booking is reversed), and a pacs.004 returns the money (RETURNED).
@@ -45,6 +46,8 @@ import java.util.Set;
  *       when the money comes separately (cover method) and we wait for it.</li>
  *   <li>As <b>intermediary</b>: SCREENED → SENT when we forward it, then the same as outgoing.</li>
  *   <li>REJECTED before we booked anything (pacs.002 RJCT back); RETURNED after (pacs.004 back).</li>
+ *   <li>HELD_COMPLIANCE: nothing is booked while held; a release continues to whatever SCREENED would
+ *       have led to (SETTLED, SENT, AWAITING_COVER), a rejection is REJECTED with RR04.</li>
  * </ul>
  */
 public final class PaymentStateMachine {
@@ -68,7 +71,7 @@ public final class PaymentStateMachine {
         INCOMING.put(RECEIVED, EnumSet.of(VALIDATED, REJECTED));
         INCOMING.put(VALIDATED, EnumSet.of(SCREENED, REJECTED));
         INCOMING.put(SCREENED, EnumSet.of(SETTLED, SENT, AWAITING_COVER, HELD_COMPLIANCE, REJECTED));
-        INCOMING.put(HELD_COMPLIANCE, EnumSet.of(REJECTED)); // the release path arrives with compliance (M6)
+        INCOMING.put(HELD_COMPLIANCE, EnumSet.of(SETTLED, SENT, AWAITING_COVER, REJECTED)); // released: as from SCREENED
         INCOMING.put(FUNDS_RESERVED, EnumSet.noneOf(PaymentStatus.class));
         INCOMING.put(AWAITING_COVER, EnumSet.of(SETTLED, REJECTED));
         INCOMING.put(SENT, EnumSet.of(ACKED, SETTLED, REJECTED, RETURNED));

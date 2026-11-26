@@ -119,9 +119,10 @@ public class PaymentProcessor {
             boolean progressed = switch (p.status()) {
                 case RECEIVED -> validate(p);
                 case VALIDATED -> screen(p);
-                case SCREENED -> reserveFunds(p);
+                case SCREENED -> reserveFunds(p, PaymentStatus.SCREENED, "", "svc/ledger");
+                case HELD_COMPLIANCE -> afterCompliance(p);
                 case FUNDS_RESERVED -> send(p);
-                default -> false; // waiting for the network, a compliance decision, or final
+                default -> false; // waiting for the network, or final
             };
             if (!progressed) {
                 return;
@@ -150,19 +151,34 @@ public class PaymentProcessor {
     }
 
     private boolean screen(Payment p) {
-        ScreeningPort.Result result = screening.screen(p);
+        ScreeningPort.Result result = screening.screen(p, businessDate());
         return transitions.transition(p.id(), PaymentStatus.VALIDATED, payment ->
                 new Change(PaymentStatus.SCREENED, null, result.detail(), "svc/screening"))
                 && (!result.hit() || transitions.transition(p.id(), PaymentStatus.SCREENED, payment ->
                 new Change(PaymentStatus.HELD_COMPLIANCE, null, result.detail(), "svc/screening")));
     }
 
-    private boolean reserveFunds(Payment p) {
+    /**
+     * A held payment moves on only by a compliance decision: released, it continues to the funds
+     * reservation as if it had passed screening; rejected, it ends with RR04 (regulatory reason) and no
+     * money was ever reserved. Until then it waits; the decision's event (or the sweeper) brings it back.
+     */
+    private boolean afterCompliance(Payment p) {
+        com.minipay.compliance.api.CaseVerdict v = screening.verdict(p);
+        return switch (v.verdict()) {
+            case RELEASED -> reserveFunds(p, PaymentStatus.HELD_COMPLIANCE, v.summary() + " · ", IncomingProcessor.actor(v));
+            case REJECTED -> reject(p, PaymentStatus.HELD_COMPLIANCE, "RR04", v.summary(), IncomingProcessor.actor(v));
+            case PENDING, NONE -> false;
+        };
+    }
+
+    /** @param note what led here (a compliance release), kept in front of the history entry */
+    private boolean reserveFunds(Payment p, PaymentStatus from, String note, String actor) {
         Money amount = Money.of(p.amount(), p.currency());
         Money fee = feeFor(p.currency());
         Charges charges = Charges.of(p.chargeBearer(), amount, fee);
         if (!charges.interbankSettlementAmount().isPositive()) {
-            return reject(p, PaymentStatus.SCREENED, "AM12",
+            return reject(p, from, "AM12",
                     "Amount " + amount + " does not cover our fee " + fee + " under charge bearer CRED", "svc/ledger");
         }
         AccountView debtor = ledger.findAccountByNumber(p.debtorAccount()).orElseThrow();
@@ -171,14 +187,14 @@ public class PaymentProcessor {
             hold = ledger.reserve(new ReserveFundsCommand(key(p, "reserve"), debtor.id(), charges.hold(), p.id(),
                     "Payment " + p.endToEndId() + " to " + p.creditorName())).value();
         } catch (LedgerException e) {
-            return reject(p, PaymentStatus.SCREENED, iso(e), e.getMessage(), "svc/ledger");
+            return reject(p, from, iso(e), e.getMessage(), "svc/ledger");
         }
-        String detail = "Hold " + charges.hold() + " on " + p.debtorAccount()
+        String detail = note + "Hold " + charges.hold() + " on " + p.debtorAccount()
                 + (fee.isZero() ? "" : p.chargeBearer() == com.minipay.common.iso.ChargeBearer.CRED
                 ? " (fee " + fee + " deducted from amount, CRED)" : " (amount + fee " + fee + ", " + p.chargeBearer() + ")");
-        return transitions.transition(p.id(), PaymentStatus.SCREENED, payment -> {
+        return transitions.transition(p.id(), from, payment -> {
             payment.fundsReserved(hold.id(), fee.amount(), charges.interbankSettlementAmount().amount());
-            return new Change(PaymentStatus.FUNDS_RESERVED, null, detail, "svc/ledger");
+            return new Change(PaymentStatus.FUNDS_RESERVED, null, detail, actor);
         });
     }
 

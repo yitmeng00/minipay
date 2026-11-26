@@ -63,6 +63,7 @@ public abstract class PaymentHubIntegrationTest {
     @BeforeEach
     void world() {
         screening.crash(false);
+        screening.crashVerdict(false);
         eurNostro = ensure("T-NOSTRO-EUR-MNPB", AccountType.NOSTRO, "EUR", "Nostro EUR @ Bank B", BANK_B, false);
         gbpNostro = ensure("T-NOSTRO-GBP-MNPC", AccountType.NOSTRO, "GBP", "Nostro GBP @ Bank C", BANK_C, false);
         ensure("T-VOSTRO-MYR-MNPB", AccountType.VOSTRO, "MYR", "Vostro Bank B (MYR)", BANK_B, false);

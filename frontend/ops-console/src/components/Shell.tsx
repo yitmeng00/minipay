@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useBankInfo, useComplianceStats } from '../lib/api'
+import { useBankInfo, useComplianceStats, useNostros } from '../lib/api'
 import { BANKS, useBank } from '../lib/banks'
 import { initials, useOperator } from '../lib/operator'
 import { useTheme } from '../lib/theme'
 import { Icons } from './Icons'
 import { Chip } from './ui'
 
-type NavItem = { label: string; icon: () => ReactNode; to?: string; milestone?: string; count?: 'sanctions' }
+type NavItem = { label: string; icon: () => ReactNode; to?: string; milestone?: string; count?: 'sanctions' | 'breaks' }
 
 // Screens from the design. Only those with a `to` are powered by a delivered milestone;
 // the rest are shown so the information architecture is visible, but are not clickable yet.
@@ -20,7 +20,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { label: 'UETR tracker', icon: Icons.settlement, to: '/tracker' },
       { label: 'Sanctions queue', icon: Icons.sanctions, to: '/sanctions', count: 'sanctions' },
       { label: 'Settlement', icon: Icons.settlement, to: '/settlement' },
-      { label: 'Reconciliation', icon: Icons.recon, milestone: 'M8' },
+      { label: 'Reconciliation', icon: Icons.recon, to: '/reconciliation', count: 'breaks' },
     ],
   },
   {
@@ -36,6 +36,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
 function Sidebar() {
   const { pathname } = useLocation()
   const pending = useComplianceStats().data?.pending ?? 0
+  const breaks = (useNostros().data ?? []).reduce((a, n) => a + n.openBreaks, 0)
   return (
     <aside className="flex max-w-full flex-[1_1_232px] flex-col gap-1 border-r border-line bg-surface px-3 py-4 box-border">
       <div className="flex items-center gap-2.5 px-2.5 pt-1 pb-3">
@@ -73,6 +74,11 @@ function Sidebar() {
                   {item.count === 'sanctions' && pending > 0 && (
                     <span className="ml-auto rounded-full bg-err px-1.5 text-[11px] leading-[18px] font-semibold text-on-accent tabular-nums">
                       {pending}
+                    </span>
+                  )}
+                  {item.count === 'breaks' && breaks > 0 && (
+                    <span className="ml-auto rounded-full bg-err px-1.5 text-[11px] leading-[18px] font-semibold text-on-accent tabular-nums">
+                      {breaks}
                     </span>
                   )}
                 </NavLink>

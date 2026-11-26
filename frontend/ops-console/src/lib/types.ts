@@ -598,3 +598,104 @@ export type ClearingSystem = {
   cycleTimes: string[]
   timeoutSeconds: number | null
 }
+
+// ---------------------------------------------------------------- reconciliation (M8): amounts signed, + = money in
+
+export type ReconNostro = {
+  account: string
+  name: string
+  currency: string | null
+  servicerBic: string
+  servicerAccount: string
+  lastDate: string | null
+  openBreaks: number
+  ledgerBalance: Money | null
+}
+
+export type ReconLedgerLine = {
+  postingId: number
+  journalEntryId: string
+  date: string
+  bookedAt: string
+  signed: Money
+  uetr: string | null
+  endToEndId: string | null
+  narrative: string | null
+}
+
+export type ReconStatementLine = {
+  id: number
+  entryRef: string | null
+  date: string
+  bookedAt: string | null
+  signed: Money
+  servicerRef: string | null
+  uetr: string | null
+  endToEndId: string | null
+  info: string | null
+  bankTxCode: string | null
+  reversal: boolean
+  transactions: number
+  xml: string | null
+}
+
+export type ReconRow = {
+  matchId: number | null
+  rule: string | null
+  matchedBy: string | null
+  comment: string | null
+  breakId: string | null
+  breakType: string | null
+  breakStatus: string | null
+  ledger: ReconLedgerLine[]
+  statement: ReconStatementLine[]
+}
+
+export type ReconBreak = {
+  id: string
+  account: string
+  type: 'MISSING_IN_STATEMENT' | 'MISSING_IN_LEDGER' | 'AMOUNT_MISMATCH' | 'DUPLICATE'
+  status: 'OPEN' | 'RESOLVED' | 'CLEARED'
+  difference: Money
+  openedAt: string
+  reference: string | null
+  ledger: ReconLedgerLine | null
+  statement: ReconStatementLine | null
+  suggestion: string
+  actions: string[]
+  action: string | null
+  comment: string | null
+  resolvedBy: string | null
+  resolvedAt: string | null
+}
+
+export type Reconciliation = {
+  account: string
+  name: string
+  currency: string
+  servicerBic: string
+  servicerAccount: string
+  dates: string[]
+  statement: {
+    id: string
+    messageId: string
+    msgId: string
+    statementRef: string
+    servicerBic: string
+    servicerAccount: string
+    date: string
+    receivedAt: string
+    opening: Money
+    closing: Money
+    entries: number
+  } | null
+  ledgerEntries: number
+  statementEntries: number
+  matched: number
+  matchedManually: number
+  openBreaks: number
+  unmatchedValue: Money
+  proof: { statementClosing: Money; ledgerClosing: Money; difference: Money; openingDiff: Money; explained: Money; unexplained: Money } | null
+  rows: ReconRow[]
+  breaks: ReconBreak[]
+}

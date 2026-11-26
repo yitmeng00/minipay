@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardHeader, Chip, type Tone } from '../components/ui'
-import { useAccounts, useBankInfo, useCutoffs, useOverview } from '../lib/api'
+import { useAccounts, useBankInfo, useComplianceStats, useCutoffs, useOverview } from '../lib/api'
 import { useBank } from '../lib/banks'
 import { REASON } from '../lib/iso'
 import { formatAmount, formatMoney } from '../lib/money'
@@ -56,6 +56,23 @@ function Kpi({ label, value, unit, tag, tone, note }: { label: string; value: Re
   )
 }
 
+/** Held payments waiting for a compliance decision, and today's decisions. */
+function SanctionsKpi() {
+  const s = useComplianceStats().data
+  if (!s) return <Kpi label="Sanctions hits" value="—" tag="queue" tone="neutral" note="loading…" />
+  return (
+    <Link to="/sanctions" className="text-fg no-underline">
+      <Kpi
+        label="Sanctions hits"
+        value={s.pending}
+        tag={s.pending ? `${s.awaitingApproval} awaiting 2nd` : 'queue empty'}
+        tone={s.pending ? 'warn' : 'ok'}
+        note={`today: ${s.releasedToday} released · ${s.rejectedToday} rejected`}
+      />
+    </Link>
+  )
+}
+
 function Kpis({ o }: { o: DailyOverview }) {
   const sent = sum(o, ['SENT', 'ACKED', 'SETTLED', 'RETURNED'])
   const inFlight = sum(o, ['SENT', 'ACKED'])
@@ -88,7 +105,7 @@ function Kpis({ o }: { o: DailyOverview }) {
         tone={rejected ? 'err' : 'ok'}
         note={o.rejectedByReason[0] ? `top ${o.rejectedByReason[0].reasonCode} · ${returned} returned` : `${returned} returned`}
       />
-      <Kpi label="Sanctions hits" value="—" tag="M6" tone="neutral" note="screening arrives with compliance" />
+      <SanctionsKpi />
       <Kpi label="Recon breaks" value="—" tag="M8" tone="neutral" note="arrives with reconciliation" />
     </section>
   )

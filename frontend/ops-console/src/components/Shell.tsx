@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { useBankInfo } from '../lib/api'
+import { useBankInfo, useComplianceStats } from '../lib/api'
 import { BANKS, useBank } from '../lib/banks'
+import { initials, useOperator } from '../lib/operator'
 import { useTheme } from '../lib/theme'
 import { Icons } from './Icons'
 import { Chip } from './ui'
 
-type NavItem = { label: string; icon: () => ReactNode; to?: string; milestone?: string }
+type NavItem = { label: string; icon: () => ReactNode; to?: string; milestone?: string; count?: 'sanctions' }
 
 // Screens from the design. Only those with a `to` are powered by a delivered milestone;
 // the rest are shown so the information architecture is visible, but are not clickable yet.
@@ -17,7 +18,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { label: 'Overview', icon: Icons.overview, to: '/overview' },
       { label: 'Payments', icon: Icons.payments, to: '/payments' },
       { label: 'UETR tracker', icon: Icons.settlement, to: '/tracker' },
-      { label: 'Sanctions queue', icon: Icons.sanctions, milestone: 'M6' },
+      { label: 'Sanctions queue', icon: Icons.sanctions, to: '/sanctions', count: 'sanctions' },
       { label: 'Settlement', icon: Icons.settlement, milestone: 'M7' },
       { label: 'Reconciliation', icon: Icons.recon, milestone: 'M8' },
     ],
@@ -34,6 +35,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
 
 function Sidebar() {
   const { pathname } = useLocation()
+  const pending = useComplianceStats().data?.pending ?? 0
   return (
     <aside className="flex max-w-full flex-[1_1_232px] flex-col gap-1 border-r border-line bg-surface px-3 py-4 box-border">
       <div className="flex items-center gap-2.5 px-2.5 pt-1 pb-3">
@@ -68,6 +70,11 @@ function Sidebar() {
                 >
                   <item.icon />
                   {item.label}
+                  {item.count === 'sanctions' && pending > 0 && (
+                    <span className="ml-auto rounded-full bg-err px-1.5 text-[11px] leading-[18px] font-semibold text-on-accent tabular-nums">
+                      {pending}
+                    </span>
+                  )}
                 </NavLink>
               ) : (
                 <span
@@ -89,8 +96,38 @@ function Sidebar() {
         <span className="self-start">
           <Chip tone="warn">SIMULATION</Chip>
         </span>
+        <OperatorPicker />
       </div>
     </aside>
+  )
+}
+
+/** Who is at the keyboard (no login in the simulator): decisions are recorded under this person. */
+function OperatorPicker() {
+  const { operator, staff, setOperator } = useOperator()
+  return (
+    <label className="flex items-center gap-2.5" title="Decisions are recorded under this person (four-eyes needs two)">
+      <span className="flex size-8 flex-none items-center justify-center rounded-full bg-accent-bg text-xs font-semibold text-accent">
+        {initials(operator.name)}
+      </span>
+      <span className="flex min-w-0 flex-col leading-[1.3]">
+        <select
+          aria-label="Signed in as"
+          value={operator.id}
+          onChange={(e) => setOperator(e.target.value)}
+          className="-ml-1 cursor-pointer rounded border-0 bg-transparent p-0 font-semibold text-fg"
+        >
+          {staff.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+        <span className="text-[11px] text-muted">
+          {operator.role} · <span className="mono">{operator.id}</span>
+        </span>
+      </span>
+    </label>
   )
 }
 

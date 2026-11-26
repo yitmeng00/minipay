@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { BankProvider } from './lib/banks'
+import { OperatorProvider } from './lib/operator'
 import { initialTheme } from './lib/theme'
 import './index.css'
 
@@ -15,7 +16,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BankProvider>
-        <App />
+        <OperatorProvider>
+          <App />
+        </OperatorProvider>
       </BankProvider>
     </QueryClientProvider>
   </StrictMode>,

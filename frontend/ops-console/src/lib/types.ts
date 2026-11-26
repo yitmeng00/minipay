@@ -385,3 +385,101 @@ export type TrackerSummary = {
   messages: number
   lastUpdate: string
 }
+
+// ---------------------------------------------------------------- compliance (M6)
+
+export type CaseStatus = 'OPEN' | 'ESCALATED' | 'PENDING_APPROVAL' | 'RELEASED' | 'REJECTED'
+export type DecisionAction = 'RELEASE' | 'REJECT' | 'ESCALATE' | 'APPROVE' | 'DECLINE' | 'WITHDRAW'
+export type DecisionReason = 'FALSE_POSITIVE' | 'TRUE_MATCH' | 'INSUFFICIENT_INFORMATION'
+
+export type NameToken = { text: string; matched: boolean }
+export type Factor = { name: string; percent: number | null; value: string }
+export type ComparisonRow = { attribute: string; party: string; listed: string; match: string }
+
+export type Hit = {
+  id: number
+  role: string
+  field: string
+  partyName: string
+  entryId: string
+  listCode: string
+  listName: string
+  entryType: 'INDIVIDUAL' | 'ENTITY' | 'BANK'
+  listedName: string
+  matchedOn: 'NAME' | 'ALIAS' | 'BIC'
+  matchedName: string
+  score: number
+  partyTokens: NameToken[]
+  listedTokens: NameToken[]
+  factors: Factor[]
+  comparison: ComparisonRow[]
+  hint: string
+  listedFrom: string
+  listedTo: string | null
+  program: string
+}
+
+export type Decision = {
+  id: number
+  action: DecisionAction
+  reason: DecisionReason | null
+  comment: string
+  decidedBy: string
+  decidedAt: string
+  statusBefore: CaseStatus
+  statusAfter: CaseStatus
+}
+
+export type ComplianceCase = {
+  id: string
+  paymentId: string
+  uetr: string
+  direction: 'OUTGOING' | 'INCOMING'
+  kind: 'CUSTOMER' | 'COVER'
+  amount: Money
+  debtorName: string
+  creditorName: string
+  route: string
+  status: CaseStatus
+  bestScore: number
+  fourEyes: boolean
+  heldAt: string
+  slaDeadline: string
+  closedAt: string | null
+  screenedAsOf: string
+  lists: string
+  hits: Hit[]
+  decisions: Decision[]
+}
+
+export type ComplianceStats = {
+  pending: number
+  awaitingApproval: number
+  escalated: number
+  oldestHeldAt: string | null
+  releasedToday: number
+  rejectedToday: number
+  medianDecisionMinutes: number | null
+  slaMinutes: number
+  pendingByList: Record<string, number>
+}
+
+export type ComplianceSettings = { holdThreshold: number; fourEyesThreshold: number; slaMinutes: number; lists: string[] }
+
+export type SanctionsList = { code: string; name: string; authority: string; snapshotDate: string; activeEntries: number }
+
+export type Screening = {
+  id: string
+  paymentId: string
+  screenedAt: string
+  asOf: string
+  lists: string
+  screenedItems: number
+  holdThreshold: number
+  bestScore: number
+  outcome: 'CLEAR' | 'HIT'
+  caseId: string | null
+  caseStatus: CaseStatus | null
+}
+
+export type PaymentCompliance = { screening: Screening; caseView: ComplianceCase | null }

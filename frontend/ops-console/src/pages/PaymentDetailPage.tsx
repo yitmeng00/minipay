@@ -14,6 +14,7 @@ import {
   useTracker,
 } from '../lib/api'
 import { RouteCard } from '../components/RouteCard'
+import { ScreeningCard } from '../components/ScreeningCard'
 import { MessagesPanel } from '../components/MessagesPanel'
 import { BANKS, useBank } from '../lib/banks'
 import { CHARGE_BEARER, REASON, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
@@ -591,6 +592,8 @@ export function PaymentDetailPage() {
       </Card>
 
       <Lifecycle history={data.history} tz={tz} payment={p} />
+
+      <ScreeningCard paymentId={p.id} />
 
       {tracked && <RouteCard view={tracked} tz={tz} ourBic={bank.bic} />}
 

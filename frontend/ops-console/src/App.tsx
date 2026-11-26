@@ -6,6 +6,7 @@ import { OverviewPage } from './pages/OverviewPage'
 import { PaymentDetailPage } from './pages/PaymentDetailPage'
 import { PaymentsPage } from './pages/PaymentsPage'
 import { ReferenceDataPage } from './pages/ReferenceDataPage'
+import { SanctionsPage } from './pages/SanctionsPage'
 import { TrackerPage } from './pages/TrackerPage'
 
 export function App() {
@@ -19,6 +20,8 @@ export function App() {
           <Route path="/payments/:ref" element={<PaymentDetailPage />} />
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/reference-data" element={<ReferenceDataPage />} />
+          <Route path="/sanctions" element={<SanctionsPage />} />
+          <Route path="/sanctions/:caseId" element={<SanctionsPage />} />
           <Route path="/tracker" element={<TrackerPage />} />
           <Route path="/tracker/:uetr" element={<TrackerPage />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />

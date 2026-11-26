@@ -5,7 +5,9 @@
 - **Milestone:** M4
 - **Amends:** ADR-003 §11 (network outcomes are now real messages)
 - **Amended by:** ADR-006 (M5): pacs.009 COV and camt.054; every sent message goes on the network; RJCT and
-  inbound pacs.008 are acted on
+  inbound pacs.008 are acted on;
+  ADR-009 (M8): camt.053 entries name their payments (TxDtls UETR, EndToEndId) and itemise batch bookings; received
+  statements are read for reconciliation
 
 ## Context
 

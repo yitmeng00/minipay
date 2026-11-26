@@ -5,6 +5,9 @@ import com.minipay.ledger.api.EntryType;
 import com.minipay.ledger.api.StatementLine;
 import com.minipay.ledger.api.StatementView;
 import com.minipay.messaging.api.MessageType;
+import com.minipay.messaging.api.StatementTx;
+import com.prowidesoftware.swift.model.mx.dic.BatchInformation2;
+import java.util.List;
 import com.prowidesoftware.swift.model.mx.MxCamt05300108;
 import com.prowidesoftware.swift.model.mx.dic.AccountStatement9;
 import com.prowidesoftware.swift.model.mx.dic.BalanceType10Choice;
@@ -53,6 +56,16 @@ public final class Camt053Writer {
 
     public static MxCamt05300108 build(StatementView s, String servicerBic, String receiverBic, String msgId,
                                        String statementId, long sequence, OffsetDateTime created, ZoneId zone) {
+        return build(s, servicerBic, receiverBic, msgId, statementId, sequence, created, zone, l -> List.of());
+    }
+
+    /**
+     * @param details each line's transactions (UETR, end-to-end id, …): one for a payment, several for a batch
+     *                booking; empty if unknown (then the entry carries only our own reference)
+     */
+    public static MxCamt05300108 build(StatementView s, String servicerBic, String receiverBic, String msgId,
+                                       String statementId, long sequence, OffsetDateTime created, ZoneId zone,
+                                       java.util.function.Function<StatementLine, List<StatementTx>> details) {
         String ccy = s.account().currency();
         AccountStatement9 stmt = new AccountStatement9()
                 .setId(statementId)
@@ -74,7 +87,7 @@ public final class Camt053Writer {
                         .setTtlDbtNtries(new NumberAndSumOfTransactions1()
                                 .setNbOfNtries(Integer.toString(s.debitCount())).setSum(s.totalDebits().amount())));
         for (StatementLine line : s.lines()) {
-            stmt.addNtry(entry(line, zone));
+            stmt.addNtry(entry(line, zone, details.apply(line)));
         }
 
         MxCamt05300108 mx = new MxCamt05300108();
@@ -94,7 +107,7 @@ public final class Camt053Writer {
                 .setDt(new DateAndDateTime2Choice().setDt(s.date()));
     }
 
-    private static ReportEntry10 entry(StatementLine l, ZoneId zone) {
+    private static ReportEntry10 entry(StatementLine l, ZoneId zone, List<StatementTx> txs) {
         boolean credit = l.credit() != null;
         Money amount = credit ? l.credit() : l.debit();
         // AcctSvcrRef is Max35Text: the journal entry id without hyphens (32 characters).
@@ -107,9 +120,25 @@ public final class Camt053Writer {
                 .setBookgDt(new DateAndDateTime2Choice().setDtTm(l.bookedAt().atZone(zone).toOffsetDateTime()))
                 .setValDt(new DateAndDateTime2Choice().setDt(l.valueDate()))
                 .setAcctSvcrRef(ref)
-                .setBkTxCd(code(l.entryType(), credit))
-                .addNtryDtls(new EntryDetails9().addTxDtls(new EntryTransaction10()
-                        .setRefs(new TransactionReferences6().setAcctSvcrRef(ref))));
+                .setBkTxCd(code(l.entryType(), credit));
+        EntryDetails9 dtls = new EntryDetails9();
+        if (txs.isEmpty()) {
+            dtls.addTxDtls(new EntryTransaction10().setRefs(new TransactionReferences6().setAcctSvcrRef(ref)));
+        } else {
+            if (txs.size() > 1) {
+                // A batch booking: one entry for several transactions (e.g. a DNS cycle's net settlement).
+                dtls.setBtch(new BatchInformation2().setNbOfTxs(Integer.toString(txs.size())));
+            }
+            for (StatementTx t : txs) {
+                EntryTransaction10 tx = new EntryTransaction10().setRefs(new TransactionReferences6().setAcctSvcrRef(ref)
+                        .setUETR(t.uetr()).setEndToEndId(t.endToEndId()).setInstrId(t.instructionId()));
+                if (txs.size() > 1) {
+                    tx.setAmt(Mx.amount(t.amount())).setCdtDbtInd(t.credit() ? CreditDebitCode.CRDT : CreditDebitCode.DBIT);
+                }
+                dtls.addTxDtls(tx);
+            }
+        }
+        e.addNtryDtls(dtls);
         if (l.entryType() == EntryType.REVERSAL) {
             e.setRvslInd(true);
         }

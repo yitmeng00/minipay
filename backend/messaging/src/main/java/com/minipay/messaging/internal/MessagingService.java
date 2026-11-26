@@ -12,6 +12,10 @@ import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.Idempotent;
 import com.minipay.messaging.api.InboundMessage;
 import com.minipay.messaging.api.MessageDetail;
+import com.prowidesoftware.swift.model.mx.MxCamt05300108;
+import com.minipay.messaging.api.BankStatement;
+import com.minipay.messaging.api.StatementTx;
+import com.minipay.messaging.internal.mx.StatementReader;
 import com.minipay.messaging.api.MessageDirection;
 import com.minipay.messaging.api.MessageSummary;
 import com.minipay.messaging.api.MessageType;
@@ -340,6 +344,21 @@ public class MessagingService implements MessagingApi {
     @Override
     @Transactional
     public Idempotent<MessageView> issueCamt053(String key, long accountId, LocalDate date) {
+        return issueCamt053(key, accountId, date, line -> List.of());
+    }
+
+    @Override
+    public BankStatement bankStatement(UUID messageId) {
+        MessageDetail d = get(messageId);
+        if (d.message().type() != MessageType.CAMT_053) {
+            throw new MessagingException(MessagingError.NOT_FOUND, "Message " + messageId + " is not a camt.053");
+        }
+        return StatementReader.read((MxCamt05300108) AbstractMX.parse(d.raw()), d.raw());
+    }
+
+    @Override
+    public Idempotent<MessageView> issueCamt053(String key, long accountId, LocalDate date,
+                                                java.util.function.Function<com.minipay.ledger.api.StatementLine, List<StatementTx>> details) {
         if (key == null || key.isBlank()) {
             throw new IllegalArgumentException("Idempotency-Key is required");
         }
@@ -368,7 +387,7 @@ public class MessagingService implements MessagingApi {
         }
         String receiver = account.type() == AccountType.VOSTRO && account.counterpartyBic() != null
                 ? Bic.parse(account.counterpartyBic()).value() : null;
-        String raw = Mx.render(Camt053Writer.build(s, ownBic, receiver, msgId, statementId, seq, now(), bankZone));
+        String raw = Mx.render(Camt053Writer.build(s, ownBic, receiver, msgId, statementId, seq, now(), bankZone, details));
         selfCheck(raw);
         MessageView m = repo.insert(new NewMessage(MessageDirection.OUTBOUND, MessageType.CAMT_053, msgId, ownBic, receiver,
                 null, null, null, null, null, account.accountNumber(), s.closingBooked(), day, null, null, List.of(), raw));

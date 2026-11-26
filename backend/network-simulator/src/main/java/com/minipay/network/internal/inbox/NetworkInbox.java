@@ -3,6 +3,8 @@ package com.minipay.network.internal.inbox;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.minipay.paymenthub.api.PaymentException;
 import com.minipay.paymenthub.api.PaymentHubApi;
+import com.minipay.recon.api.ReconApi;
+import com.minipay.recon.api.ReconException;
 import com.minipay.settlement.api.SettlementException;
 import com.minipay.settlement.api.SettlementOperatorApi;
 import java.nio.charset.StandardCharsets;
@@ -32,11 +34,13 @@ class NetworkInbox {
 
     private final PaymentHubApi hub;
     private final SettlementOperatorApi operator;
+    private final ReconApi recon;
     private final ObjectMapper json;
 
-    NetworkInbox(PaymentHubApi hub, SettlementOperatorApi operator, ObjectMapper json) {
+    NetworkInbox(PaymentHubApi hub, SettlementOperatorApi operator, ReconApi recon, ObjectMapper json) {
         this.hub = hub;
         this.operator = operator;
+        this.recon = recon;
         this.json = json;
     }
 
@@ -44,6 +48,17 @@ class NetworkInbox {
     void onMessage(ConsumerRecord<String, String> record) throws Exception {
         Envelope e = json.readValue(record.value(), Envelope.class);
         String eventId = header(record, "event-id");
+        if (e.type() != null && e.type().startsWith("camt.053")) {
+            // A servicer's end-of-day statement of one of our nostros: for reconciliation (ADR-009), not for payments.
+            try {
+                var r = recon.receiveStatement(e.raw());
+                log.info("camt.053 {} from {} → {} {}: {} entries, {} matched, {} open breaks{}", e.msgId(), e.sender(), r.account(),
+                        r.date(), r.entries(), r.matched(), r.openBreaks(), r.replayed() ? " (already processed)" : "");
+            } catch (ReconException ex) {
+                log.info("camt.053 {} from {} stored, not reconciled: {}", e.msgId(), e.sender(), ex.getMessage());
+            }
+            return;
+        }
         if (operator.isOperator()) {
             // The central bank's inbox: payment orders for its clearing systems (ADR-008). A redelivery is the
             // same message, which the message store recognises by (sender, MsgId).

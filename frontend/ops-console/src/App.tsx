@@ -8,6 +8,7 @@ import { PaymentsPage } from './pages/PaymentsPage'
 import { ReferenceDataPage } from './pages/ReferenceDataPage'
 import { SanctionsPage } from './pages/SanctionsPage'
 import { SettlementPage } from './pages/SettlementPage'
+import { ReconciliationPage } from './pages/ReconciliationPage'
 import { TrackerPage } from './pages/TrackerPage'
 
 export function App() {
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/sanctions" element={<SanctionsPage />} />
           <Route path="/sanctions/:caseId" element={<SanctionsPage />} />
           <Route path="/settlement" element={<SettlementPage />} />
+          <Route path="/reconciliation" element={<ReconciliationPage />} />
           <Route path="/tracker" element={<TrackerPage />} />
           <Route path="/tracker/:uetr" element={<TrackerPage />} />
           <Route path="*" element={<Navigate to="/overview" replace />} />

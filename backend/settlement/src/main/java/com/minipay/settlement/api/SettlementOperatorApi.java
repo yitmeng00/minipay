@@ -34,6 +34,15 @@ public interface SettlementOperatorApi {
 
     List<TransferView> transfersForUetr(UUID uetr);
 
+    /**
+     * The transfers a booking on the central bank's ledger settled: one for a T2 or instant payment, every payment
+     * of the cycle for a DNS net settlement. What its statements (camt.053) list per entry (M8).
+     */
+    List<TransferView> transfersSettledBy(UUID entryId);
+
+    /** A transfer by id, if there is one (a ledger line's payment id at the operator is a transfer id). */
+    java.util.Optional<TransferView> findTransfer(UUID id);
+
     /** RTGS: the payer moves a queued payment one place up its queue. */
     Replayed<TransferView> moveUp(String idempotencyKey, UUID transferId, String participantBic);
 

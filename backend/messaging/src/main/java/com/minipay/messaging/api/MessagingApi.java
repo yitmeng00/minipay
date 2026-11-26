@@ -95,4 +95,14 @@ public interface MessagingApi {
      * customer, or another bank's vostro), from the ledger statement of that business date.
      */
     Idempotent<MessageView> issueCamt053(String idempotencyKey, long accountId, LocalDate date);
+
+    /**
+     * The same, with the references of each entry's transactions (UETR, end-to-end id), which the ledger alone does
+     * not know. The account owner reconciles on them (M8).
+     */
+    Idempotent<MessageView> issueCamt053(String idempotencyKey, long accountId, LocalDate date,
+                                         java.util.function.Function<com.minipay.ledger.api.StatementLine, java.util.List<StatementTx>> details);
+
+    /** A stored camt.053, read (M8). */
+    BankStatement bankStatement(UUID messageId);
 }

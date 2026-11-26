@@ -20,6 +20,13 @@ minipay:
     # Our charge on a payment another bank sends us, as intermediary or creditor's bank (SHAR/CRED only).
     processing-fees:
       EUR: 15.00
+  # Nostro reconciliation (M8, ADR-009): our accounts at the central bank, against its statements.
+  recon:
+    nostros:
+      - { account: 1001-EUR-T2,   servicer: MNCBDEFFXXX, servicer-account: RTGS-MNPBDEFF }
+      - { account: 1002-EUR-INST, servicer: MNCBDEFFXXX, servicer-account: INST-MNPBDEFF }
+    adjustment-accounts:
+      EUR: 6110-EUR-BANKCHG
   seed:
     enabled: true
     accounts:
@@ -37,6 +44,7 @@ minipay:
       # M7: our MiniPay Instant position at the central bank, prefunded from our T2 account (a liquidity
       # transfer). Mirror of the operator's INST-MNPBDEFF; 1001-EUR-T2 mirrors its RTGS-MNPBDEFF.
       - { number: 1002-EUR-INST, type: NOSTRO, currency: EUR, owner: "MiniPay Instant position (central bank)", counterparty-bic: MNCBDEFFXXX, opening-balance: 1000000.00, funded-from: 1001-EUR-T2 }
+      - { number: 6110-EUR-BANKCHG, type: SUSPENSE, currency: EUR, owner: "Bank charges and reconciliation differences EUR", allow-overdraft: true }
     # Bank B's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: EUR, method: DIRECT, settlement-account: DE87500100600778812003, priority: 10, from: "2024-01-01", release: v2024.01.1 }

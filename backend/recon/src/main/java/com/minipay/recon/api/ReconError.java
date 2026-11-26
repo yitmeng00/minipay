@@ -1,0 +1,5 @@
+package com.minipay.recon.api;
+
+public enum ReconError {
+    NOT_FOUND, UNKNOWN_ACCOUNT, INVALID_MESSAGE, INVALID_REQUEST, ILLEGAL_ACTION, IDEMPOTENCY_CONFLICT
+}

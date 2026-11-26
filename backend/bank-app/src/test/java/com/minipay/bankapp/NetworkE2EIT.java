@@ -21,6 +21,8 @@ import com.minipay.paymenthub.api.PaymentStatus;
 import com.minipay.paymenthub.api.PaymentView;
 import com.minipay.paymenthub.api.ServiceLevel;
 import com.minipay.settlement.api.SettlementOperatorApi;
+import com.minipay.recon.api.ReconApi;
+import com.minipay.recon.api.ReconViews;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -95,7 +97,8 @@ class NetworkE2EIT {
                         "--spring.datasource.password=" + db.getPassword(),
                         "--spring.kafka.bootstrap-servers=" + KAFKA.getBootstrapServers(),
                         "--minipay.outbox.relay.interval=PT0.2S",
-                        "--minipay.settlement.simulated-answer-delay=PT0.3S");
+                        "--minipay.settlement.simulated-answer-delay=PT0.3S",
+                        "--minipay.recon.auto-publish=false");
     }
 
     // ------------------------------------------------------------------ the routes
@@ -397,6 +400,67 @@ class NetworkE2EIT {
         return bank.getBean(PaymentHubApi.class).create(new CreatePaymentCommand("e2e-" + UUID.randomUUID(), debtor,
                 creditorName, creditorAccount, creditorAgent, Money.of(amount, "EUR"), ChargeBearer.SHAR, null,
                 "E2E-" + UUID.randomUUID().toString().substring(0, 8), "End-to-end test", level)).value();
+    }
+
+
+    // ------------------------------------------------------------------ reconciliation (M8, ADR-009)
+
+    @Test
+    @Order(13)
+    void every_nostro_reconciles_against_its_servicers_statement_and_a_charge_is_a_break_resolved_by_adjustment() {
+        // Bank B charges Bank A a maintenance fee on its EUR account: Bank A does not know yet.
+        LedgerApi bLedger = b.getBean(LedgerApi.class);
+        long vostroA = bLedger.findAccountByNumber("DE87500100600778812003").orElseThrow().id();
+        long feeB = bLedger.findAccountByNumber("4020-FEE-EUR").orElseThrow().id();
+        bLedger.post(new com.minipay.ledger.api.PostEntryCommand("e2e-fee-" + UUID.randomUUID(), com.minipay.ledger.api.EntryType.FEE,
+                null, null, "ACCOUNT MAINTENANCE FEE NOV 2026", java.util.List.of(
+                new com.minipay.ledger.api.PostingLine(vostroA, com.minipay.ledger.api.Direction.D, eur("25.00")),
+                new com.minipay.ledger.api.PostingLine(feeB, com.minipay.ledger.api.Direction.C, eur("25.00")))));
+
+        // End of day: every servicer sends its statements; every owner reconciles on receipt.
+        for (ConfigurableApplicationContext servicer : new ConfigurableApplicationContext[] {b, c, operator}) {
+            servicer.getBean(ReconApi.class).publishStatements("e2e-eod-" + UUID.randomUUID(), null);
+        }
+        Map<ConfigurableApplicationContext, java.util.List<String>> nostros = Map.of(
+                a, java.util.List.of("1101-EUR-MNPB", "1102-GBP-MNPC"),
+                b, java.util.List.of("1001-EUR-T2", "1002-EUR-INST"),
+                c, java.util.List.of("1103-EUR-MNPB", "1004-EUR-T2", "1005-EUR-INST"));
+        nostros.forEach((bank, accounts) -> accounts.forEach(acct -> {
+            ReconViews.Reconciliation r = awaitStatement(bank, acct);
+            if (!acct.equals("1101-EUR-MNPB")) {
+                assertThat(r.breaks()).as(acct + " breaks: " + r.breaks()).isEmpty();
+            }
+            assertThat(r.proof().unexplained()).as(acct + " proof " + r.proof()).isEqualTo(Money.zero(r.currency()));
+        }));
+        // Bank B's T2 account: the DNS cycle's net booking matched the gross payments it listed.
+        assertThat(awaitStatement(b, "1001-EUR-T2").rows()).extracting(ReconViews.Row::rule).contains("TAKE_ON", "UETR", "BATCH", "CONTRA");
+
+        // Bank A: everything matched but the charge, which is the whole difference between the two balances.
+        ReconApi recon = a.getBean(ReconApi.class);
+        ReconViews.Reconciliation r = awaitStatement(a, "1101-EUR-MNPB");
+        assertThat(r.breaks()).singleElement().satisfies(x -> {
+            assertThat(x.type()).isEqualTo("MISSING_IN_LEDGER");
+            assertThat(x.difference()).isEqualTo(eur("-25.00"));
+            assertThat(x.actions()).contains("ADJUSTMENT");
+        });
+        assertThat(r.proof().unexplained()).isEqualTo(eur("0.00")); // the gap between the balances is the open items
+
+        Money nostroBefore = booked(a, "1101-EUR-MNPB");
+        recon.resolve("e2e-adj-" + UUID.randomUUID(), r.breaks().get(0).id(), new ReconViews.Resolve("ADJUSTMENT",
+                "Maintenance fee per our account agreement with Bank B", "n.rahman"));
+        ReconViews.Reconciliation after = recon.reconciliation("1101-EUR-MNPB", null);
+        assertThat(after.openBreaks()).isZero();
+        assertThat(after.proof().unexplained()).isEqualTo(eur("0.00"));
+        assertThat(nostroBefore.minus(booked(a, "1101-EUR-MNPB"))).isEqualTo(eur("25.00"));
+        assertThat(booked(a, "1101-EUR-MNPB")).isEqualTo(booked(b, "DE87500100600778812003"));
+        integrity();
+    }
+
+    private static ReconViews.Reconciliation awaitStatement(ConfigurableApplicationContext bank, String account) {
+        ReconApi recon = bank.getBean(ReconApi.class);
+        await().atMost(Duration.ofSeconds(30)).pollInterval(Duration.ofMillis(250))
+                .until(() -> recon.reconciliation(account, null).statement() != null);
+        return recon.reconciliation(account, null);
     }
 
     private static void release(ConfigurableApplicationContext bank, String uetr) {

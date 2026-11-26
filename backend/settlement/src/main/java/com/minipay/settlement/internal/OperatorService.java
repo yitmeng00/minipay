@@ -580,6 +580,16 @@ public class OperatorService implements SettlementOperatorApi, ApplicationRunner
         return repo.forUetr(uetr);
     }
 
+    @Override
+    public List<TransferView> transfersSettledBy(UUID entryId) {
+        return repo.settledBy(entryId);
+    }
+
+    @Override
+    public Optional<TransferView> findTransfer(UUID id) {
+        return repo.find(id);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private ParticipantRow participantOrThrow(String bic) {

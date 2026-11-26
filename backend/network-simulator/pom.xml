@@ -32,6 +32,11 @@
             <artifactId>settlement</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>recon</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>

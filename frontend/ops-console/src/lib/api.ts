@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useBank } from './banks'
 import type {
+  ReconBreak,
+  ReconNostro,
+  Reconciliation,
   ClearingParticipant,
   ClearingSystem,
   DnsCycle,
@@ -594,6 +597,78 @@ export function useCloseCycle() {
   return useMutation({
     mutationFn: ({ key }: { key: string }) => postJson<DnsCycle>(`${OP}/dns/cycles/close`, {}, key),
     // Settling a cycle moves money at the banks too (payments delivered): refresh everything.
+    onSuccess: () => qc.invalidateQueries(),
+  })
+}
+
+// ---------------------------------------------------------------- reconciliation (M8)
+
+export function useNostros() {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'recon', 'nostros'],
+    queryFn: () => getJson<ReconNostro[]>(`/${bank.id}/api/recon/nostros`),
+    refetchInterval: 10_000,
+  })
+}
+
+export function useReconciliation(account: string | undefined, date: string | undefined) {
+  const { bank } = useBank()
+  return useQuery({
+    queryKey: [bank.id, 'recon', account, date ?? 'latest'],
+    queryFn: () => getJson<Reconciliation>(`/${bank.id}/api/recon/nostros/${account}${date ? `?date=${date}` : ''}`),
+    enabled: !!account,
+    refetchInterval: 10_000,
+  })
+}
+
+export function useRerun() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ account, key }: { account: string; key: string }) =>
+      postJson<Reconciliation>(`/${bank.id}/api/recon/nostros/${account}/rerun`, {}, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id, 'recon'] }),
+  })
+}
+
+export function useResolveBreak() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body, key }: { id: string; body: { action: string; comment: string; by: string }; key: string }) =>
+      postJson<ReconBreak>(`/${bank.id}/api/recon/breaks/${id}/resolve`, body, key),
+    // An adjustment books on our nostro: refresh the ledger views too.
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id] }),
+  })
+}
+
+export function useReopenBreak() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, by, key }: { id: string; by: string; key: string }) =>
+      postJson<ReconBreak>(`/${bank.id}/api/recon/breaks/${id}/reopen`, { by }, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id, 'recon'] }),
+  })
+}
+
+export function useManualMatch() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ body, key }: { body: { account: string; ledgerPostingIds: number[]; statementEntryIds: number[]; comment: string; by: string }; key: string }) =>
+      postJson<Reconciliation>(`/${bank.id}/api/recon/matches`, body, key),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [bank.id, 'recon'] }),
+  })
+}
+
+export function usePublishStatements() {
+  const { bank } = useBank()
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ date, key }: { date?: string; key: string }) =>
+      postJson<{ date: string; accounts: string[]; replayed: boolean }>(`/${bank.id}/api/recon/statements/publish`, date ? { date } : {}, key),
     onSuccess: () => qc.invalidateQueries(),
   })
 }

@@ -6,6 +6,8 @@
 - **Amends:** ADR-003 §1 (service levels; incoming ACKED for instant payments), ADR-004 §6 (routing methods
   DNS and INSTANT; RTGS through a clearing system), ADR-006 §1–§2 (a fourth institution on the network;
   payments that arrive settled cannot be rejected, only returned)
+- **Amended by:** ADR-009 (M8): the central bank sends each participant an end-of-day camt.053 of its T2 and instant
+  accounts; a DNS net booking lists every payment of the cycle that concerns the participant
 
 ## Context
 

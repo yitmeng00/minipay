@@ -138,6 +138,11 @@ public class SettlementRepository {
                 .param("d", date).query((rs, n) -> transfer(rs)).list();
     }
 
+    public List<TransferView> settledBy(UUID entryId) {
+        return jdbc.sql("SELECT * FROM settlement.transfer WHERE entry_id = :e AND status = 'SETTLED' ORDER BY received_at")
+                .param("e", entryId).query((rs, n) -> transfer(rs)).list();
+    }
+
     public List<TransferView> inCycle(String cycleId) {
         return jdbc.sql("SELECT * FROM settlement.transfer WHERE cycle_id = :c ORDER BY received_at").param("c", cycleId)
                 .query((rs, n) -> transfer(rs)).list();

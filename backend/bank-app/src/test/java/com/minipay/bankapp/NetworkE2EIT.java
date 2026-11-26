@@ -5,6 +5,12 @@ import static org.awaitility.Awaitility.await;
 
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.common.money.Money;
+import com.minipay.compliance.api.CaseStatus;
+import com.minipay.compliance.api.CaseView;
+import com.minipay.compliance.api.ComplianceApi;
+import com.minipay.compliance.api.DecideCommand;
+import com.minipay.compliance.api.DecisionAction;
+import com.minipay.compliance.api.DecisionReason;
 import com.minipay.ledger.api.LedgerApi;
 import com.minipay.network.api.Hop;
 import com.minipay.network.api.TrackerApi;
@@ -35,7 +41,8 @@ import org.testcontainers.kafka.KafkaContainer;
  * own PostgreSQL — talking to each other over one Kafka, exactly as they do when run from Compose.
  *
  * <p>Nothing here calls a bank on another bank's behalf: a payment is created at Bank A and everything
- * after that (forwarding, crediting, confirmations, cover, returns) happens through the network.
+ * after that (forwarding, crediting, confirmations, cover, returns) happens through the network. The
+ * compliance officers' decisions are the only other input, each at its own bank.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class NetworkE2EIT {
@@ -183,12 +190,92 @@ class NetworkE2EIT {
         integrity();
     }
 
+    // ------------------------------------------------------------------ sanctions screening (M6)
+
+    static final String OAKRIDGE = "GB20MNPC40051290550011";
+    static final String FALSE_POSITIVE = "Different entity: UK company, Companies House 09811234; the listed party is a UAE free-zone company";
+
+    /**
+     * Every bank screens for itself. The creditor's name resembles a listed entity, so the payment is held
+     * at Bank A, and once Bank A releases it, again at Bank B, and again at Bank C. Each bank's release
+     * needs two officers (score ≥ 90). Only then is the creditor credited and the ACSC sent back.
+     */
+    @Test
+    @Order(6)
+    void every_bank_on_the_route_screens_the_payment_and_releases_it_with_four_eyes() {
+        Money creditor = booked(c, OAKRIDGE);
+        PaymentView p = pay("MNPCGB2LXXX", OAKRIDGE, "1000.00", "EUR", "Oakridge Interiors Ltd");
+        assertThat(p.status()).isEqualTo(PaymentStatus.HELD_COMPLIANCE);
+
+        release(a, p.uetr());
+        awaitStatus(b, p.uetr(), PaymentStatus.HELD_COMPLIANCE);
+        assertThat(status(a, p.uetr())).isEqualTo(PaymentStatus.SENT);
+        release(b, p.uetr());
+        awaitStatus(c, p.uetr(), PaymentStatus.HELD_COMPLIANCE);
+        assertThat(booked(c, OAKRIDGE)).isEqualTo(creditor); // nothing credited while held
+        release(c, p.uetr());
+
+        awaitStatus(a, p.uetr(), PaymentStatus.SETTLED);
+        assertThat(booked(c, OAKRIDGE)).isEqualTo(creditor.plus(eur("975.00")));
+        for (ConfigurableApplicationContext bank : new ConfigurableApplicationContext[] {a, b, c}) {
+            CaseView cv = caseAt(bank, p.uetr());
+            assertThat(cv.status()).isEqualTo(CaseStatus.RELEASED);
+            assertThat(cv.decisions()).extracting(d -> d.decidedBy()).containsExactly("n.rahman", "j.tan");
+        }
+        track(a, p.uetr(), "ACSC");
+        integrity();
+    }
+
+    /**
+     * Bank A released the payment, Bank B finds a true match and refuses it: pacs.002 RJCT RR04
+     * ("regulatory reason"), with nothing about why. Bank A reverses its booking; the debtor has the
+     * money and the fee back. Bank C never sees the payment.
+     */
+    @Test
+    @Order(7)
+    void a_true_match_at_the_intermediary_is_rejected_RR04_and_reversed_at_the_debtors_bank() {
+        Money debtorBefore = booked(a, "514087234412");
+        PaymentView p = pay("MNPCGB2LXXX", OAKRIDGE, "400.00", "EUR", "Oakridge Interiors Ltd");
+        release(a, p.uetr());
+        awaitStatus(b, p.uetr(), PaymentStatus.HELD_COMPLIANCE);
+
+        decide(b, caseAt(b, p.uetr()).id(), DecisionAction.REJECT, DecisionReason.TRUE_MATCH,
+                "Registry check: this is the listed company trading under its UK name", "k.weber");
+
+        awaitStatus(a, p.uetr(), PaymentStatus.REJECTED);
+        PaymentView atA = a.getBean(PaymentHubApi.class).get(p.uetr()).payment();
+        assertThat(atA.rejectionReason()).isEqualTo("RR04");
+        assertThat(booked(a, "514087234412")).isEqualTo(debtorBefore);
+        assertThat(status(c, p.uetr())).isNull();
+        integrity();
+    }
+
+    private static void release(ConfigurableApplicationContext bank, String uetr) {
+        UUID caseId = caseAt(bank, uetr).id();
+        decide(bank, caseId, DecisionAction.RELEASE, DecisionReason.FALSE_POSITIVE, FALSE_POSITIVE, "n.rahman");
+        decide(bank, caseId, DecisionAction.APPROVE, null, FALSE_POSITIVE, "j.tan");
+    }
+
+    private static void decide(ConfigurableApplicationContext bank, UUID caseId, DecisionAction action, DecisionReason reason,
+                               String comment, String by) {
+        bank.getBean(ComplianceApi.class).decide(new DecideCommand("e2e-" + UUID.randomUUID(), caseId, action, reason, comment, by));
+    }
+
+    private static CaseView caseAt(ConfigurableApplicationContext bank, String uetr) {
+        UUID paymentId = bank.getBean(PaymentHubApi.class).get(uetr).payment().id();
+        return bank.getBean(ComplianceApi.class).caseForPayment(paymentId).orElseThrow();
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private PaymentView pay(String creditorAgent, String creditorAccount, String amount, String ccy) {
+        return pay(creditorAgent, creditorAccount, amount, ccy, "Harlow & Finch Engineering Ltd");
+    }
+
+    private PaymentView pay(String creditorAgent, String creditorAccount, String amount, String ccy, String creditorName) {
         String debtor = ccy.equals("GBP") ? "514055218840" : "514087234412";
         return a.getBean(PaymentHubApi.class).create(new CreatePaymentCommand("e2e-" + UUID.randomUUID(), debtor,
-                "Harlow & Finch Engineering Ltd", creditorAccount, creditorAgent, Money.of(amount, ccy), ChargeBearer.SHAR,
+                creditorName, creditorAccount, creditorAgent, Money.of(amount, ccy), ChargeBearer.SHAR,
                 null, "E2E-" + UUID.randomUUID().toString().substring(0, 8), "End-to-end test")).value();
     }
 

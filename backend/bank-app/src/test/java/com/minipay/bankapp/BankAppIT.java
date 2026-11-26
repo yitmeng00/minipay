@@ -2,6 +2,7 @@ package com.minipay.bankapp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -125,6 +126,59 @@ class BankAppIT {
         // Any other Malaysian bank in MYR: through RENTAS.
         mvc.perform(get("/api/refdata/routes").param("bic", "MNPMMYKLXXX").param("currency", "MYR"))
                 .andExpect(jsonPath("$.route.rule.method").value("RTGS"));
+    }
+
+    /** The compliance REST API end to end: a held payment, a four-eyes release, idempotent decisions. */
+    @Test
+    @Order(Integer.MAX_VALUE - 1)
+    void a_held_payment_is_released_over_http_by_two_officers() throws Exception {
+        String uetr = com.jayway.jsonpath.JsonPath.read(mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/payments")
+                        .header("Idempotency-Key", "bank-app-it-held")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"debtorAccount": "514087234412", "creditorName": "Oakridge Interiors Ltd",
+                                 "creditorAccount": "GB20MNPC40051290550011", "creditorAgentBic": "MNPCGB2LXXX",
+                                 "amount": {"amount": "1200.00", "currency": "EUR"}, "chargeBearer": "SHAR"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("HELD_COMPLIANCE"))
+                .andReturn().getResponse().getContentAsString(), "$.uetr");
+        String caseId = com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/compliance/cases"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].uetr").value(uetr))
+                .andExpect(jsonPath("$[0].fourEyes").value(true))
+                .andExpect(jsonPath("$[0].hits[0].entryId").value("EU.SIM.4417"))
+                .andReturn().getResponse().getContentAsString(), "$[0].id");
+        String release = """
+                {"action": "RELEASE", "reason": "FALSE_POSITIVE", "decidedBy": "n.rahman",
+                 "comment": "Different entity: UK company registered at Companies House"}
+                """;
+        var decide = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/compliance/cases/" + caseId + "/decisions")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        mvc.perform(decide.content(release)).andExpect(status().isBadRequest()); // no Idempotency-Key
+        mvc.perform(decide.header("Idempotency-Key", "dec-1").content(release))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/compliance/cases/" + caseId + "/decisions")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).header("Idempotency-Key", "dec-1").content(release))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotent-Replayed", "true"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/compliance/cases/" + caseId + "/decisions")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).header("Idempotency-Key", "dec-2")
+                        .content(release.replace("RELEASE", "APPROVE").replace("\"FALSE_POSITIVE\"", "null")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FOUR_EYES"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/compliance/cases/" + caseId + "/decisions")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).header("Idempotency-Key", "dec-3")
+                        .content(release.replace("RELEASE", "APPROVE").replace("\"FALSE_POSITIVE\"", "null").replace("n.rahman", "j.tan")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("RELEASED"));
+        mvc.perform(get("/api/payments/" + uetr)).andExpect(jsonPath("$.payment.status").value("SENT"));
+        mvc.perform(get("/api/compliance/payments/" + com.jayway.jsonpath.JsonPath.read(mvc.perform(get("/api/payments/" + uetr))
+                        .andReturn().getResponse().getContentAsString(), "$.payment.id")))
+                .andExpect(jsonPath("$.screening.outcome").value("HIT"))
+                .andExpect(jsonPath("$.caseView.status").value("RELEASED"));
+        mvc.perform(get("/api/compliance/settings")).andExpect(jsonPath("$.lists.length()").value(2));
     }
 
     @Test

@@ -1,4 +1,4 @@
-// Stroke icons from the design export (24×24, currentColor).
+// Stroke icons (24×24, currentColor).
 import type { ReactNode } from 'react'
 
 function Icon({ children, size = 16, width = 1.8 }: { children: ReactNode; size?: number; width?: number }) {

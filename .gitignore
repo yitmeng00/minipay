@@ -85,6 +85,3 @@ bin/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-
-# ---- Claude Code (personal settings only; shared .claude/ config may be committed)
-.claude/settings.local.json

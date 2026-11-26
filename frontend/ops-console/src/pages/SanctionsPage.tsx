@@ -83,7 +83,7 @@ function Tokens({ tokens }: { tokens: NameToken[] }) {
 // ---------------------------------------------------------------- page
 
 /**
- * Payments held by sanctions screening, and the decision on each (design: Sanctions.dc.html). The
+ * Payments held by sanctions screening, and the decision on each. The
  * queue is this bank's: every bank on a route screens for itself.
  */
 export function SanctionsPage() {

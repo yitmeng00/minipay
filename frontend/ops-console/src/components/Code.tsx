@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 
 type Token = { c: string; t: string }
 
-/** Splits one line of XML into coloured tokens (tags, attributes, strings, text), as in the design. */
+/** Splits one line of XML into coloured tokens (tags, attributes, strings, text) */
 function tokenize(line: string): Token[] {
   const re = /(<\?[^?]*\?>)|(<\/?)([\w:.]+)|(\s[\w:]+)(=)("[^"]*")|(\/?>)|([^<]+)/g
   const ws = line.match(/^\s*/)?.[0] ?? ''

@@ -371,7 +371,7 @@ function RoutingTable({ date }: { date: string }) {
   )
 }
 
-// ---------------------------------------------------------------- calendars (not in the design: M3 data that needed a home)
+// ---------------------------------------------------------------- calendars
 
 function Calendars({ date }: { date: string }) {
   const schemes = useSchemes().data ?? []

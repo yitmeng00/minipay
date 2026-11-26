@@ -29,7 +29,4 @@ public record PaymentReturn(
     public PaymentReturn {
         charges = charges == null ? List.of() : List.copyOf(charges);
     }
-
-    public record Charge(Money amount, String agentBic) {
-    }
 }

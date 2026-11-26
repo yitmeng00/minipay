@@ -96,6 +96,7 @@ export type PaymentStatus =
   | 'SCREENED'
   | 'HELD_COMPLIANCE'
   | 'FUNDS_RESERVED'
+  | 'AWAITING_COVER'
   | 'SENT'
   | 'ACKED'
   | 'SETTLED'
@@ -127,6 +128,10 @@ export type Payment = {
   executionDate: string
   valueDate: string | null
   routingRuleId: string | null
+  kind: 'CUSTOMER' | 'COVER'
+  instructingAgentBic: string | null
+  settlementMethod: 'INDA' | 'INGA' | 'COVE' | 'CLRG' | null
+  coverAgentBic: string | null
   rejectionReason: string | null
   rejectionDetail: string | null
   reservationId: string | null
@@ -288,7 +293,7 @@ export type Scheme = {
 
 // ---- Messaging (com.minipay.messaging.api)
 
-export type MessageType = 'PACS_008' | 'PACS_002' | 'PACS_004' | 'CAMT_053' | 'MT103'
+export type MessageType = 'PACS_008' | 'PACS_002' | 'PACS_004' | 'PACS_009' | 'CAMT_053' | 'CAMT_054' | 'MT103'
 
 export type MessageView = {
   id: string
@@ -320,3 +325,63 @@ export type FieldMapping = { mtTag: string; mtValue: string; mxPath: string; mxV
 export type Translation = { from: MessageType; to: MessageType; target: string; fields: FieldMapping[] }
 
 export type PaymentPreview = { xml: string; notes: string[] }
+
+// ---- UETR tracker (com.minipay.network.api)
+
+export type Charge = { amount: Money; agentBic: string }
+
+export type Hop = {
+  number: number
+  type: string
+  fromBic: string
+  toBic: string
+  msgId: string
+  amount: Money | null
+  settlementMethod: string | null
+  sentAt: string
+  reply: string | null
+  replyReason: string | null
+  replyAt: string | null
+}
+
+export type TrackedMessage = {
+  eventId: string
+  type: string
+  msgId: string
+  fromBic: string
+  toBic: string
+  originalMsgId: string | null
+  amount: Money | null
+  settlementMethod: string | null
+  status: string | null
+  reasonCode: string | null
+  charges: Charge[]
+  sentAt: string
+}
+
+export type TrackerView = {
+  uetr: string
+  status: 'ACSP' | 'ACSC' | 'RJCT' | 'RTND'
+  method: 'SERIAL' | 'COVER' | 'DIRECT' | null
+  debtorAgentBic: string | null
+  creditorAgentBic: string | null
+  sentAmount: Money | null
+  creditedAmount: Money | null
+  returnedAmount: Money | null
+  deductions: Charge[]
+  hops: Hop[]
+  coverLegs: Hop[]
+  returnPath: Hop[]
+  messages: TrackedMessage[]
+  endToEnd: string | null
+}
+
+export type TrackerSummary = {
+  uetr: string
+  status: TrackerView['status']
+  debtorAgentBic: string | null
+  creditorAgentBic: string | null
+  sentAmount: Money | null
+  messages: number
+  lastUpdate: string
+}

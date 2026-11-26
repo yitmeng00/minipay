@@ -66,6 +66,8 @@ public abstract class PaymentHubIntegrationTest {
         eurNostro = ensure("T-NOSTRO-EUR-MNPB", AccountType.NOSTRO, "EUR", "Nostro EUR @ Bank B", BANK_B, false);
         gbpNostro = ensure("T-NOSTRO-GBP-MNPC", AccountType.NOSTRO, "GBP", "Nostro GBP @ Bank C", BANK_C, false);
         ensure("T-VOSTRO-MYR-MNPB", AccountType.VOSTRO, "MYR", "Vostro Bank B (MYR)", BANK_B, false);
+        ensure("T-VOSTRO-MYR-MNPC", AccountType.VOSTRO, "MYR", "Vostro Bank C (MYR)", BANK_C, false);
+        ensure("T-FEE-MYR", AccountType.FEE_INCOME, "MYR", "Fee income MYR", null, false);
         ensure("T-NOSTRO-MYR-CB", AccountType.NOSTRO, "MYR", "RENTAS", "MNCBMYKLXXX", false);
         eurFees = ensure("T-FEE-EUR", AccountType.FEE_INCOME, "EUR", "Fee income EUR", null, false);
         ensure("T-FEE-GBP", AccountType.FEE_INCOME, "GBP", "Fee income GBP", null, false);
@@ -79,7 +81,9 @@ public abstract class PaymentHubIntegrationTest {
                 // Anyone else in EUR: serial via Bank B, our EUR correspondent.
                 new RoutingRuleImport("R-803", "*", "EUR", RoutingMethod.SERIAL, BANK_B, "T-NOSTRO-EUR-MNPB", 99, from, null, "v2024.01.1"),
                 // Bank B in MYR: direct, on Bank B's vostro with us.
-                new RoutingRuleImport("R-804", "MNPBDEFF*", "MYR", RoutingMethod.DIRECT, null, "T-VOSTRO-MYR-MNPB", 10, from, null, "v2024.01.1")));
+                new RoutingRuleImport("R-804", "MNPBDEFF*", "MYR", RoutingMethod.DIRECT, null, "T-VOSTRO-MYR-MNPB", 10, from, null, "v2024.01.1"),
+                // Bank C in MYR: direct, on Bank C's vostro with us.
+                new RoutingRuleImport("R-805", "MNPCGB2L*", "MYR", RoutingMethod.DIRECT, null, "T-VOSTRO-MYR-MNPC", 10, from, null, "v2024.01.1")));
     }
 
     private AccountView ensure(String number, AccountType type, String ccy, String owner, String bic, boolean overdraft) {

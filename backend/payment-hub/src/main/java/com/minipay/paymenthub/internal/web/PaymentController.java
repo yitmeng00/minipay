@@ -110,9 +110,22 @@ class PaymentController {
                 body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation()));
     }
 
+    record ReturnRequest(String reasonCode, String additionalInformation) {
+    }
+
+    @PostMapping("/{uetr}/return")
+    @Operation(summary = "As the creditor's bank: send a payment we credited back to the bank that sent it (pacs.004)",
+            description = "Debits our customer what we credited and returns it with a reason (AC04, MD07 …). Every bank's "
+                    + "deduction is listed in ChrgsInf.")
+    ResponseEntity<PaymentView> returnPayment(@RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
+                                              @PathVariable String uetr, @RequestBody ReturnRequest body) {
+        return respond(hub.returnPayment(requireKey(key), uetr, body.reasonCode(), body.additionalInformation()));
+    }
+
     @PostMapping("/{uetr}/network-events")
-    @Operation(summary = "SIMULATION (until M5): the next bank answers — it sends us a pacs.002 (ACCEPTED: ACCP, "
-            + "SETTLED: ACSC) or a pacs.004 (RETURNED), which is then received like any real message")
+    @Operation(summary = "SIMULATION for banks outside the simulator: that bank answers — it sends us a pacs.002 "
+            + "(ACCEPTED: ACCP, SETTLED: ACSC, REJECTED: RJCT) or a pacs.004 (RETURNED), received like any real message. "
+            + "The three simulated banks answer over the network themselves.")
     ResponseEntity<PaymentView> networkEvent(@RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
                                              @PathVariable String uetr,
                                              @Valid @RequestBody NetworkEventRequest body) {

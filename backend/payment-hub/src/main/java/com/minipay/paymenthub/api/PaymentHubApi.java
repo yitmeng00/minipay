@@ -37,6 +37,12 @@ public interface PaymentHubApi {
      */
     Replayable<PaymentView> receiveMessage(String idempotencyKey, String raw);
 
+    /**
+     * As the creditor's bank: send a payment we credited back to the bank that sent it (pacs.004).
+     * Idempotent per key.
+     */
+    Replayable<PaymentView> returnPayment(String idempotencyKey, String uetr, String reasonCode, String additionalInfo);
+
     /** The pacs.008 this payment would produce if sent now; nothing is created, held or booked. */
     PaymentPreview preview(CreatePaymentCommand command);
 }

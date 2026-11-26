@@ -24,6 +24,14 @@ export const REASON: Record<string, string> = {
   RR03: 'Missing creditor name or address',
 }
 
+/** gpi-style tracker status of a payment as the network sees it. */
+export const GPI_STATUS: Record<string, { label: string; tone: Tone }> = {
+  ACSP: { label: 'In progress', tone: 'info' },
+  ACSC: { label: 'Credited', tone: 'ok' },
+  RJCT: { label: 'Rejected', tone: 'err' },
+  RTND: { label: 'Returned', tone: 'err' },
+}
+
 export function reasonText(code: string | null | undefined): string {
   if (!code) return ''
   return REASON[code] ? `${code} · ${REASON[code]}` : code
@@ -35,6 +43,7 @@ export const STATUS_TONE: Record<PaymentStatus, Tone> = {
   SCREENED: 'info',
   HELD_COMPLIANCE: 'warn',
   FUNDS_RESERVED: 'info',
+  AWAITING_COVER: 'warn',
   SENT: 'info',
   ACKED: 'info',
   SETTLED: 'ok',
@@ -46,7 +55,7 @@ export const STATUS_TONE: Record<PaymentStatus, Tone> = {
 export const STATUS_TABS: { id: string; label: string; statuses: PaymentStatus[] }[] = [
   { id: 'all', label: 'All', statuses: [] },
   { id: 'progress', label: 'In progress', statuses: ['RECEIVED', 'VALIDATED', 'SCREENED', 'SENT', 'ACKED'] },
-  { id: 'pending', label: 'Pending / held', statuses: ['FUNDS_RESERVED', 'HELD_COMPLIANCE'] },
+  { id: 'pending', label: 'Pending / held', statuses: ['FUNDS_RESERVED', 'AWAITING_COVER', 'HELD_COMPLIANCE'] },
   { id: 'settled', label: 'Settled', statuses: ['SETTLED'] },
   { id: 'rejected', label: 'Rejected / returned', statuses: ['REJECTED', 'RETURNED'] },
 ]

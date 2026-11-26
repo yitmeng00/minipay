@@ -35,6 +35,9 @@ public final class Pacs002Writer {
             }
             tx.addStsRsnInf(rsn);
         }
+        for (com.minipay.messaging.api.Charge c : r.charges()) {
+            tx.addChrgsInf(new com.prowidesoftware.swift.model.mx.dic.Charges7().setAmt(Mx.amount(c.amount())).setAgt(Mx.agent(c.agentBic())));
+        }
         MxPacs00200110 mx = new MxPacs00200110();
         mx.setAppHdr(Mx.header(r.fromBic(), r.toBic(), msgId, MessageType.PACS_002, created));
         mx.setFIToFIPmtStsRpt(new FIToFIPaymentStatusReportV10()

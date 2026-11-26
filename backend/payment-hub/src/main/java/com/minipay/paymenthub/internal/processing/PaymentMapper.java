@@ -19,6 +19,7 @@ public final class PaymentMapper {
                 p.debtorName(), p.debtorAccount(), p.debtorAgentBic(),
                 p.creditorName(), p.creditorAccount(), p.creditorAgentBic(), p.instructedAgentBic(),
                 p.remittanceInfo(), p.requestedExecDate(), p.executionDate(), p.valueDate(), p.routingRuleId(),
+                p.kind(), p.instructingAgentBic(), p.settlementMethod(), p.coverAgentBic(),
                 p.rejectionReason(), p.rejectionDetail(), p.reservationId(), p.createdAt(), p.updatedAt());
     }
 

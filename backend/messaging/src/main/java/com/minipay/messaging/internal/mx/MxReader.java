@@ -8,9 +8,11 @@ import com.minipay.messaging.api.TransactionStatus;
 import com.prowidesoftware.swift.model.mx.AbstractMX;
 import com.prowidesoftware.swift.model.mx.AppHdr;
 import com.prowidesoftware.swift.model.mx.MxCamt05300108;
+import com.prowidesoftware.swift.model.mx.MxCamt05400108;
 import com.prowidesoftware.swift.model.mx.MxPacs00200110;
 import com.prowidesoftware.swift.model.mx.MxPacs00400109;
 import com.prowidesoftware.swift.model.mx.MxPacs00800108;
+import com.prowidesoftware.swift.model.mx.MxPacs00900108;
 import com.prowidesoftware.swift.model.mx.dic.AccountStatement9;
 import com.prowidesoftware.swift.model.mx.dic.CreditTransferTransaction39;
 import com.prowidesoftware.swift.model.mx.dic.PaymentTransaction110;
@@ -77,7 +79,7 @@ public final class MxReader {
             type = MessageType.fromIdentifier(mx.getMxId().id());
         } catch (RuntimeException e) {
             return failed("Unsupported message type " + mx.getMxId().id()
-                    + " (supported: pacs.008.001.08, pacs.002.001.10, pacs.004.001.09, camt.053.001.08)");
+                    + " (supported: pacs.008.001.08, pacs.002.001.10, pacs.004.001.09, pacs.009.001.08, camt.053.001.08, camt.054.001.08)");
         }
         Builder b = new Builder(type);
         AppHdr h = mx.getAppHdr();
@@ -101,6 +103,8 @@ public final class MxReader {
             case PACS_002 -> readPacs002((MxPacs00200110) mx, b);
             case PACS_004 -> readPacs004((MxPacs00400109) mx, b);
             case CAMT_053 -> readCamt053((MxCamt05300108) mx, b);
+            case PACS_009 -> readPacs009((MxPacs00900108) mx, b);
+            case CAMT_054 -> readCamt054((MxCamt05400108) mx, b);
             default -> b.error("Not an MX message");
         }
         if (b.msgId == null || b.msgId.isBlank() || b.msgId.length() > 35) {
@@ -254,6 +258,68 @@ public final class MxReader {
                         b.settlementDate = bal.getDt() != null ? bal.getDt().getDt() : null;
                     });
         }
+    }
+
+    private static void readPacs009(MxPacs00900108 mx, Builder b) {
+        var doc = mx.getFICdtTrf();
+        if (doc == null || doc.getGrpHdr() == null) {
+            b.error("FICdtTrf/GrpHdr is missing");
+            return;
+        }
+        b.msgId = doc.getGrpHdr().getMsgId();
+        if (doc.getCdtTrfTxInf() == null || doc.getCdtTrfTxInf().size() != 1) {
+            b.error("Exactly one CdtTrfTxInf is required");
+            return;
+        }
+        var tx = doc.getCdtTrfTxInf().get(0);
+        if (tx.getPmtId() != null) {
+            b.uetr = tx.getPmtId().getUETR();
+            b.endToEndId = tx.getPmtId().getEndToEndId();
+            b.instructionId = tx.getPmtId().getInstrId();
+        }
+        checkUetr(b, "PmtId/UETR", b.uetr);
+        if (tx.getIntrBkSttlmAmt() == null) {
+            b.error("IntrBkSttlmAmt is missing");
+        } else {
+            b.amount = checkAmount(b, "IntrBkSttlmAmt", tx.getIntrBkSttlmAmt().getValue(), tx.getIntrBkSttlmAmt().getCcy());
+        }
+        b.settlementDate = tx.getIntrBkSttlmDt();
+        checkBic(b, "Dbtr", Mx.bic(tx.getDbtr()));
+        checkBic(b, "Cdtr", Mx.bic(tx.getCdtr()));
+        if (tx.getUndrlygCstmrCdtTrf() == null) {
+            b.error("UndrlygCstmrCdtTrf is missing: a cover payment must carry the customer payment it covers");
+        }
+    }
+
+    private static void readCamt054(MxCamt05400108 mx, Builder b) {
+        var doc = mx.getBkToCstmrDbtCdtNtfctn();
+        if (doc == null || doc.getGrpHdr() == null) {
+            b.error("BkToCstmrDbtCdtNtfctn/GrpHdr is missing");
+            return;
+        }
+        b.msgId = doc.getGrpHdr().getMsgId();
+        if (doc.getNtfctn() == null || doc.getNtfctn().size() != 1 || doc.getNtfctn().get(0).getNtry() == null
+                || doc.getNtfctn().get(0).getNtry().size() != 1) {
+            b.error("Exactly one Ntfctn with one Ntry is expected");
+            return;
+        }
+        var n = doc.getNtfctn().get(0);
+        var e = n.getNtry().get(0);
+        if (n.getAcct() != null && n.getAcct().getId() != null) {
+            b.account = n.getAcct().getId().getIBAN() != null ? n.getAcct().getId().getIBAN()
+                    : n.getAcct().getId().getOthr() != null ? n.getAcct().getId().getOthr().getId() : null;
+        }
+        b.amount = e.getAmt() == null ? null : checkAmount(b, "Ntry/Amt", e.getAmt().getValue(), e.getAmt().getCcy());
+        b.status = e.getCdtDbtInd() != null ? e.getCdtDbtInd().name() : null;
+        b.settlementDate = e.getValDt() != null ? e.getValDt().getDt() : null;
+        if (e.getNtryDtls() != null && !e.getNtryDtls().isEmpty() && e.getNtryDtls().get(0).getTxDtls() != null
+                && !e.getNtryDtls().get(0).getTxDtls().isEmpty() && e.getNtryDtls().get(0).getTxDtls().get(0).getRefs() != null) {
+            var refs = e.getNtryDtls().get(0).getTxDtls().get(0).getRefs();
+            b.uetr = refs.getUETR();
+            b.endToEndId = refs.getEndToEndId();
+            b.instructionId = refs.getInstrId();
+        }
+        checkUetr(b, "NtryDtls/TxDtls/Refs/UETR", b.uetr);
     }
 
     // ------------------------------------------------------------------ checks

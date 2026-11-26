@@ -1,9 +1,21 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Card, CardHeader, Chip, Tabs, type Tone } from '../components/ui'
-import { ApiError, useAccounts, useBankInfo, useBicDirectory, useMessages, useNetworkEvent, usePayment, usePaymentEntries } from '../lib/api'
+import {
+  ApiError,
+  useAccounts,
+  useBankInfo,
+  useBicDirectory,
+  useMessages,
+  useNetworkEvent,
+  usePayment,
+  usePaymentEntries,
+  useReturnPayment,
+  useTracker,
+} from '../lib/api'
+import { RouteCard } from '../components/RouteCard'
 import { MessagesPanel } from '../components/MessagesPanel'
-import { BANKS } from '../lib/banks'
+import { BANKS, useBank } from '../lib/banks'
 import { CHARGE_BEARER, REASON, STATUS_TONE, formatIban, reasonText } from '../lib/iso'
 import { formatAmount, formatMoney } from '../lib/money'
 import type { JournalEntry, Payment, PaymentStatus, StateChange } from '../lib/types'
@@ -42,13 +54,21 @@ function bankName(bic: string | null) {
 
 // ---------------------------------------------------------------- lifecycle
 
-const MAIN_PATH: PaymentStatus[] = ['RECEIVED', 'VALIDATED', 'SCREENED', 'FUNDS_RESERVED', 'SENT', 'ACKED', 'SETTLED']
+/** The happy path this payment follows: outgoing, incoming and credited here, incoming by cover, or passed on. */
+function mainPath(p: Payment): PaymentStatus[] {
+  if (p.direction === 'OUTGOING') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'FUNDS_RESERVED', 'SENT', 'ACKED', 'SETTLED']
+  if (p.instructedAgentBic && p.kind === 'CUSTOMER') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'SENT', 'ACKED', 'SETTLED']
+  if (p.settlementMethod === 'COVE') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'AWAITING_COVER', 'SETTLED']
+  return ['RECEIVED', 'VALIDATED', 'SCREENED', 'SETTLED']
+}
 
-function Lifecycle({ history, tz }: { history: StateChange[]; tz: string }) {
+function Lifecycle({ history, tz, payment }: { history: StateChange[]; tz: string; payment: Payment }) {
+  const MAIN_PATH = mainPath(payment)
+  const cols = MAIN_PATH.length
   const at = new Map(history.map((h) => [h.to, h]))
   const start = history[0] ? new Date(history[0].occurredAt).getTime() : 0
   const branch = history.find((h) => h.to === 'REJECTED' || h.to === 'RETURNED' || h.to === 'HELD_COMPLIANCE')
-  const branchCol = branch?.from ? Math.min(MAIN_PATH.indexOf(branch.from), 5) : 0
+  const branchCol = branch?.from ? Math.max(0, Math.min(MAIN_PATH.indexOf(branch.from), cols - 2)) : 0
   const branchTone: Tone = branch?.to === 'HELD_COMPLIANCE' ? 'warn' : 'err'
   const last = history[history.length - 1]
   const total = last ? new Date(last.occurredAt).getTime() - start : 0
@@ -78,7 +98,7 @@ function Lifecycle({ history, tz }: { history: StateChange[]; tz: string }) {
         </div>
       </CardHeader>
       <div className="overflow-x-auto px-2 py-5">
-        <ol className="m-0 grid min-w-[760px] list-none grid-cols-7 p-0">
+        <ol className="m-0 grid min-w-[760px] list-none p-0" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
           {MAIN_PATH.map((s, i) => {
             const h = at.get(s)
             const prev = i > 0 ? at.get(MAIN_PATH[i - 1]) : undefined
@@ -100,7 +120,7 @@ function Lifecycle({ history, tz }: { history: StateChange[]; tz: string }) {
           })}
         </ol>
         {branch && (
-          <div className="grid min-w-[760px] grid-cols-7">
+          <div className="grid min-w-[760px]" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             <div
               style={{ gridColumn: `${branchCol + 1} / span 2` }}
               className={`mx-1.5 mt-3 flex flex-col items-center gap-[3px] rounded-lg px-2.5 py-2 text-center ${
@@ -122,7 +142,42 @@ function Lifecycle({ history, tz }: { history: StateChange[]; tz: string }) {
   )
 }
 
-// ---------------------------------------------------------------- network simulation (until M5)
+// ---------------------------------------------------------------- network simulation (banks outside the simulator)
+
+/** Banks A, B and C answer over the network themselves; anyone else is played from the console. */
+function isSimulatedBank(bic: string | null) {
+  return !!bic && BANKS.some((b) => b.bic.slice(0, 8) === bic.slice(0, 8))
+}
+
+/** As the creditor's bank: send a payment we credited back (pacs.004). */
+function ReturnPanel({ p }: { p: Payment }) {
+  const ret = useReturnPayment(p.uetr)
+  const [reason, setReason] = useState('AC04')
+  const allowed = p.status === 'SETTLED' && p.settlementMethod !== 'COVE'
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-2">
+      <span className="lbl">Return to {p.instructingAgentBic}</span>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <select className="sel mono" aria-label="Return reason" value={reason} onChange={(e) => setReason(e.target.value)} disabled={!allowed}>
+          {RETURN_REASONS.map((r) => (
+            <option key={r} value={r}>
+              {r} · {REASON[r]}
+            </option>
+          ))}
+        </select>
+        <Button
+          disabled={!allowed || ret.isPending}
+          title={allowed ? 'Debit our customer what we credited and send it back (pacs.004)' : 'Only a payment we credited (not by cover) can be returned'}
+          onClick={() => ret.mutate({ reasonCode: reason, key: `return-${p.uetr}` })}
+        >
+          pacs.004 return
+        </Button>
+      </div>
+      {ret.error && <span className="text-xs text-err-fg">{(ret.error as ApiError).message}</span>}
+      <span className="text-[11px] text-muted">Returns what we credited; every bank’s deduction is listed in ChrgsInf</span>
+    </div>
+  )
+}
 
 const RETURN_REASONS = ['AC04', 'AC01', 'AC06', 'BE04', 'MD07', 'CUST', 'DUPL']
 
@@ -136,7 +191,7 @@ function SimulateNetwork({ p }: { p: Payment }) {
 
   return (
     <div className="flex shrink-0 flex-col items-end gap-2">
-      <span className="lbl">Simulate network · until M5</span>
+      <span className="lbl">Simulate {p.instructedAgentBic} · outside the simulator</span>
       {next === null ? (
         <span className="text-xs text-muted">
           {p.status === 'FUNDS_RESERVED' ? 'Warehoused — sent on its value date' : 'No network event applies in this state'}
@@ -170,7 +225,7 @@ function SimulateNetwork({ p }: { p: Payment }) {
       )}
       {ev.error && <span className="text-xs text-err-fg">{(ev.error as ApiError).message}</span>}
       <span className="text-[11px] text-muted">
-        Plays {p.instructedAgentBic}: its message is built, stored and received as real · the network sends them from M5
+        {p.instructedAgentBic} is not one of the simulated banks: its answer is built here and received like a real message
       </span>
     </div>
   )
@@ -405,6 +460,8 @@ export function PaymentDetailPage() {
   const { data, isLoading, error } = usePayment(ref)
   const entries = usePaymentEntries(data?.payment.id).data ?? []
   const messages = useMessages(data?.payment.uetr).data ?? []
+  const tracked = useTracker(data?.payment.uetr).data
+  const { bank } = useBank()
   const tz = useBankInfo().data?.timeZone ?? 'UTC'
   // The open tab lives in the URL (?tab=ledger) so it can be linked to.
   const [params, setParams] = useSearchParams()
@@ -445,7 +502,10 @@ export function PaymentDetailPage() {
                 {outbound ? '↗' : '↙'}
               </span>
               <span className="text-xs text-muted">
-                {outbound ? 'Outbound' : 'Inbound'} customer credit transfer · pacs.008.001.08 · CBPR+ serial
+                {outbound ? 'Outbound' : 'Inbound'}{' '}
+                {p.kind === 'COVER' ? 'cover payment · pacs.009.001.08 COV' : 'customer credit transfer · pacs.008.001.08'}
+                {p.instructingAgentBic && <> · from <span className="mono">{p.instructingAgentBic}</span></>}
+                {p.settlementMethod && <> · SttlmMtd <span className="mono">{p.settlementMethod}</span></>}
               </span>
             </div>
             <div className="flex flex-wrap items-baseline gap-3">
@@ -473,9 +533,13 @@ export function PaymentDetailPage() {
               >
                 {copied ? 'Copied' : 'Copy'}
               </Button>
+              <Link to={`/tracker/${p.uetr}`} className="ml-1 text-xs text-accent no-underline">
+                Track in UETR tracker →
+              </Link>
             </div>
           </div>
-          {outbound && <SimulateNetwork key={p.status} p={p} />}
+          {outbound && !isSimulatedBank(p.instructedAgentBic) && <SimulateNetwork key={p.status} p={p} />}
+          {!outbound && p.kind === 'CUSTOMER' && !p.instructedAgentBic && <ReturnPanel key={p.status} p={p} />}
         </div>
         <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line2 pt-3.5 md:grid-cols-6">
           <div>
@@ -526,7 +590,9 @@ export function PaymentDetailPage() {
         </dl>
       </Card>
 
-      <Lifecycle history={data.history} tz={tz} />
+      <Lifecycle history={data.history} tz={tz} payment={p} />
+
+      {tracked && <RouteCard view={tracked} tz={tz} ourBic={bank.bic} />}
 
       <Card>
         <Tabs<Tab>

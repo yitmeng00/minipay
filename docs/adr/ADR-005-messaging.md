@@ -4,6 +4,8 @@
 - **Date:** 2026-11-25
 - **Milestone:** M4
 - **Amends:** ADR-003 §11 (network outcomes are now real messages)
+- **Amended by:** ADR-006 (M5): pacs.009 COV and camt.054; every sent message goes on the network; RJCT and
+  inbound pacs.008 are acted on
 
 ## Context
 

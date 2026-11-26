@@ -5,7 +5,8 @@ import java.time.LocalDate;
 /**
  * One routing rule.
  *
- * @param destination   {@code XXXXXXXX*} (an institution, any branch) or {@code *} (any institution)
+ * @param destination   a full BIC11 (one branch), {@code XXXXXXXX*} (an institution, any branch) or
+ *                      {@code *} (any institution); the most specific matching rule wins a priority tie
  * @param nextHopBic    the correspondent for SERIAL and COVER; null for DIRECT and RTGS
  * @param settlementAccount the ledger account number we credit when we send
  * @param priority      lowest number wins among matching rules valid on the value date
@@ -27,9 +28,14 @@ public record RoutingRuleView(
         return !date.isBefore(effectiveFrom) && (effectiveTo == null || !date.isAfter(effectiveTo));
     }
 
-    /** Does the rule's destination cover this institution? Branches do not matter: BIC8 is compared. */
-    public boolean matches(String bic8) {
-        return destination.equals("*") || destination.equals(bic8 + "*");
+    /** Does the rule's destination cover this creditor agent (BIC11)? */
+    public boolean matches(String bic11) {
+        return destination.equals("*") || destination.equals(bic11) || destination.equals(bic11.substring(0, 8) + "*");
+    }
+
+    /** 2 = one branch, 1 = an institution, 0 = anyone. */
+    public int specificity() {
+        return destination.equals("*") ? 0 : destination.endsWith("*") ? 1 : 2;
     }
 
     public boolean isCatchAll() {

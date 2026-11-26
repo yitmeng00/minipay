@@ -2,6 +2,7 @@ package com.minipay.paymenthub.internal.domain;
 
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.paymenthub.api.PaymentDirection;
+import com.minipay.paymenthub.api.PaymentKind;
 import com.minipay.paymenthub.api.PaymentStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -101,6 +102,28 @@ public class Payment {
     @Column(name = "routing_rule_id")
     private String routingRuleId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false)
+    private PaymentKind kind = PaymentKind.CUSTOMER;
+
+    @Column(name = "instructing_agent_bic", updatable = false)
+    private String instructingAgentBic;
+
+    @Column(name = "settlement_method")
+    private String settlementMethod;
+
+    @Column(name = "cover_agent_bic")
+    private String coverAgentBic;
+
+    @Column(name = "inbound_message_id", updatable = false)
+    private UUID inboundMessageId;
+
+    @Column(name = "forward_instruction_id")
+    private String forwardInstructionId;
+
+    @Column(name = "inbound_account_id")
+    private Long inboundAccountId;
+
     @Column(name = "rejection_reason")
     private String rejectionReason;
 
@@ -156,9 +179,72 @@ public class Payment {
         return p;
     }
 
+    /**
+     * A payment another bank sent us (pacs.008), or the money leg of a cover payment (pacs.009) for
+     * which we are the correspondent. {@code amount} is what the debtor instructed; the interbank
+     * amount is what reached us on this hop, after the deductions of the banks before us.
+     */
+    public static Payment receiveIncoming(PaymentKind kind, UUID uetr, String endToEndId, String instructionId,
+                                          BigDecimal instructedAmount, BigDecimal interbankAmount, String currency,
+                                          ChargeBearer chargeBearer, String debtorName, String debtorAccount,
+                                          String debtorAgentBic, String creditorName, String creditorAccount,
+                                          String creditorAgentBic, String remittanceInfo, LocalDate settlementDate,
+                                          String instructingAgentBic, String settlementMethod, String coverAgentBic,
+                                          UUID inboundMessageId, Instant now) {
+        Payment p = new Payment();
+        p.id = UUID.randomUUID();
+        p.kind = kind;
+        p.uetr = uetr;
+        p.endToEndId = endToEndId == null ? "NOTPROVIDED" : endToEndId;
+        p.instructionId = instructionId;
+        p.direction = PaymentDirection.INCOMING;
+        p.status = PaymentStatus.RECEIVED;
+        p.amount = instructedAmount;
+        p.interbankSettlementAmount = interbankAmount;
+        p.currency = currency;
+        p.chargesAmount = BigDecimal.ZERO;
+        p.chargeBearer = chargeBearer;
+        p.debtorName = debtorName;
+        p.debtorAccount = debtorAccount;
+        p.debtorAgentBic = debtorAgentBic;
+        p.creditorName = creditorName;
+        p.creditorAccount = creditorAccount;
+        p.creditorAgentBic = creditorAgentBic;
+        p.remittanceInfo = remittanceInfo;
+        p.requestedExecDate = settlementDate;
+        p.executionDate = settlementDate;
+        p.instructingAgentBic = instructingAgentBic;
+        p.settlementMethod = settlementMethod;
+        p.coverAgentBic = coverAgentBic;
+        p.inboundMessageId = inboundMessageId;
+        p.createdAt = now;
+        p.updatedAt = now;
+        return p;
+    }
+
+    /** Incoming, as the creditor's bank: our customer was credited (net of our charge, if any). */
+    public void credited(long inboundAccount, BigDecimal ourCharge, LocalDate date) {
+        inboundAccountId = inboundAccount;
+        chargesAmount = ourCharge;
+        valueDate = date;
+    }
+
+    /** Incoming, as an intermediary: we booked it through and sent it on. */
+    public void forwarded(long inboundAccount, BigDecimal ourCharge, String nextAgentBic, long nextAccount,
+                          LocalDate date, String ruleId, String ourInstructionId, String method) {
+        inboundAccountId = inboundAccount;
+        chargesAmount = ourCharge;
+        instructedAgentBic = nextAgentBic;
+        settlementAccountId = nextAccount;
+        valueDate = date;
+        routingRuleId = ruleId;
+        forwardInstructionId = ourInstructionId;
+        settlementMethod = method;
+    }
+
     /** Changes status after checking the state machine. Returns the previous status. */
     public PaymentStatus transitionTo(PaymentStatus next, Instant now) {
-        PaymentStateMachine.check(status, next);
+        PaymentStateMachine.check(direction, status, next);
         PaymentStatus previous = status;
         status = next;
         updatedAt = now;
@@ -181,7 +267,10 @@ public class Payment {
         executionDate = date;
     }
 
-    public void routed(String nextAgentBic, long settlementAccount, LocalDate settlementDate, String ruleId) {
+    public void routed(String nextAgentBic, long settlementAccount, LocalDate settlementDate, String ruleId,
+                       String method, String coverAgent) {
+        settlementMethod = method;
+        coverAgentBic = coverAgent;
         instructedAgentBic = nextAgentBic;
         settlementAccountId = settlementAccount;
         valueDate = settlementDate;
@@ -220,6 +309,13 @@ public class Payment {
     /** Falls back to the requested date for a payment that has not been validated yet. */
     public LocalDate executionDate() { return executionDate != null ? executionDate : requestedExecDate; }
     public String routingRuleId() { return routingRuleId; }
+    public PaymentKind kind() { return kind; }
+    public String instructingAgentBic() { return instructingAgentBic; }
+    public String settlementMethod() { return settlementMethod; }
+    public String coverAgentBic() { return coverAgentBic; }
+    public UUID inboundMessageId() { return inboundMessageId; }
+    public String forwardInstructionId() { return forwardInstructionId; }
+    public Long inboundAccountId() { return inboundAccountId; }
     public String rejectionReason() { return rejectionReason; }
     public String rejectionDetail() { return rejectionDetail; }
     public UUID reservationId() { return reservationId; }

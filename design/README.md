@@ -10,7 +10,7 @@ and re-implements them with React + Tailwind. `canvas.json` lists the screens:
 |---|------|--------|----------------------|
 | 1 | Main.dc.html | Overview dashboard | M3 (sanctions M6, liquidity limits M7, recon M8) |
 | 2 | Payments.dc.html | Payments list | M2 |
-| 3 | PaymentDetail.dc.html | Payment detail (Messages tab: M4) | M2/M4 |
+| 3 | PaymentDetail.dc.html | Payment detail (Messages tab: M4, Payment route: M5) | M2/M4/M5 |
 | 4 | CreatePayment.dc.html | Create payment (test tool) | M2/M3 |
 | 5 | Sanctions.dc.html | Sanctions screening queue | M6 |
 | 6 | ReferenceData.dc.html | Reference data | M3 |

@@ -2,6 +2,7 @@ package com.minipay.messaging.internal.mt;
 
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.common.money.Money;
+import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.FieldMapping;
 import com.minipay.messaging.api.Fidelity;
@@ -238,10 +239,10 @@ public final class Mt103Translator {
             default -> ChargeBearer.SHAR;
         };
         rows.add(row(":71A:", f71a, "ChrgBr", bearer.name(), Fidelity.TRANSFORMED, null));
-        Money charges = Money.zero(ccy);
+        List<Charge> charges = new ArrayList<>();
         for (Field71F f : mt.getField71F()) {
             Money c = Money.of(f.getAmountAsBigDecimal().setScale(scale(f.getCurrency())), f.getCurrency());
-            charges = charges.plus(c);
+            charges.add(new Charge(c, sender));
             rows.add(row(":71F:", f.getValue(), "ChrgsInf/Amt", c.toString(), Fidelity.TRANSFORMED, "Attributed to the sender"));
         }
         rows.add(row("—", "", "GrpHdr/SttlmInf/SttlmMtd", "INDA", Fidelity.IMPLICIT,
@@ -249,7 +250,7 @@ public final class Mt103Translator {
 
         CreditTransfer t = new CreditTransfer(uetr, ref, "NOTPROVIDED", sender, receiver, debtorAgent, creditorAgent,
                 debtor[1], debtor[0], creditor[1], creditor[0], interbank, instructed, charges, bearer, date,
-                SettlementMethod.INDA, remittance);
+                SettlementMethod.INDA, null, List.of(), remittance);
         return new FromMt(t, rows, List.of());
     }
 

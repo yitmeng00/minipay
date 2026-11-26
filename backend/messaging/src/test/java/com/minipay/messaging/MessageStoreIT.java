@@ -64,8 +64,8 @@ class MessageStoreIT {
         CreditTransfer f = Fixtures.transfer();
         return new CreditTransfer(uetr, f.instructionId(), f.endToEndId(), "MNPBDEFFXXX", "MNPCGB2LXXX", f.debtorAgentBic(),
                 f.creditorAgentBic(), f.debtorName(), f.debtorAccount(), f.creditorName(), f.creditorAccount(),
-                f.interbankAmount(), f.instructedAmount(), f.ourCharges(), f.chargeBearer(), f.settlementDate(),
-                SettlementMethod.INDA, f.remittanceInformation());
+                f.interbankAmount(), f.instructedAmount(), f.charges(), f.chargeBearer(), f.settlementDate(),
+                SettlementMethod.INDA, null, List.of("MNPAMYKLXXX"), f.remittanceInformation());
     }
 
     static String uetr() {

@@ -76,11 +76,14 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
     @Test
     void every_status_change_wrote_an_outbox_event_in_the_same_transaction() {
         PaymentView p = hub.create(payment(customer("EUR", "500.00"), "100.00", ChargeBearer.SHAR)).value();
-        Long events = jdbc.sql("SELECT count(*) FROM payment.outbox_event WHERE aggregate_id = :id")
+        Long events = jdbc.sql("SELECT count(*) FROM payment.outbox_event WHERE aggregate_id = :id AND event_type = 'payment.status-changed'")
                 .param("id", p.id()).query(Long.class).single();
         Long history = jdbc.sql("SELECT count(*) FROM payment.payment_state_history WHERE payment_id = :id")
                 .param("id", p.id()).query(Long.class).single();
         assertThat(events).isEqualTo(history).isEqualTo(5L);
+        // ... and SENT also put the pacs.008 on the network, in the same transaction.
+        assertThat(jdbc.sql("SELECT payload->>'type' FROM payment.outbox_event WHERE aggregate_id = :id AND event_type = 'network.message'")
+                .param("id", p.id()).query(String.class).list()).containsExactly("pacs.008.001.08");
     }
 
     @Test
@@ -257,7 +260,7 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
             assertThat(sent.status()).isEqualTo(PaymentStatus.SENT);
             assertThat(sent.routingRuleId()).isEqualTo(cover.ruleId());
             assertThat(sent.instructedAgentBic()).isEqualTo("MNPEFRPPXXX"); // cover: pacs.008 to the creditor agent
-            assertThat(hub.get(thursday.uetr()).history().get(4).detail()).contains("cover via " + BANK_B);
+            assertThat(hub.get(thursday.uetr()).history().get(4).detail()).contains("pacs.009 COV").contains("→ " + BANK_B);
         } finally {
             clock.advance(Duration.ofDays(-2));
         }
@@ -355,11 +358,12 @@ class PaymentLifecycleIT extends PaymentHubIntegrationTest {
                 .extracting(e -> ((PaymentException) e).error()).isEqualTo(PaymentError.ILLEGAL_TRANSITION);
 
         PaymentView sent = hub.create(payment(customer("EUR", "100.00"), "10.00", ChargeBearer.SHAR)).value();
-        // Cannot return what has not settled — and the ledger must not have been touched.
+        hub.onNetworkEvent(key(), sent.uetr(), new NetworkEvent(NetworkEvent.Type.RETURNED, "AC04", null, null));
+        // A returned payment is final: nothing more can happen to it — and the ledger must not be touched.
         assertThatThrownBy(() -> hub.onNetworkEvent(key(), sent.uetr(),
-                new NetworkEvent(NetworkEvent.Type.RETURNED, "AC04", null, null)))
+                new NetworkEvent(NetworkEvent.Type.ACCEPTED, null, null, null)))
                 .extracting(e -> ((PaymentException) e).error()).isEqualTo(PaymentError.ILLEGAL_TRANSITION);
-        assertThat(ledger.entriesForPayment(sent.id())).hasSize(4);
+        assertThat(ledger.entriesForPayment(sent.id())).hasSize(5); // reserve, release, settle, fee, return
     }
 
     @Test

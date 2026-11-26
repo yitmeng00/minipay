@@ -17,7 +17,7 @@ The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have vali
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network)
 design/                Claude Design export of the ops console (UI reference only)
 docker-compose.yml     3 × PostgreSQL 16 (one per bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
@@ -25,9 +25,10 @@ backend/               Maven multi-module, Java 21, Spring Boot 3.5
   ledger/              Double-entry ledger (M1)
   payment-hub/          Payment lifecycle, state machine, idempotent API, outbox → Kafka (M2)
   refdata/             Effective-dated BIC directory, IBAN registry, calendars, cut-offs, routing (M3)
-  messaging/           pacs.008/002/004, camt.053, MT103 translation, raw message store (M4)
-  compliance/ settlement/ recon/ network-simulator/
-                       Placeholders for M5–M8
+  messaging/           pacs.008/002/004/009, camt.053/054, MT103 translation, raw message store (M4)
+  network-simulator/   The network between the banks: inboxes and the UETR tracker (M5)
+  compliance/ settlement/ recon/
+                       Placeholders for M6–M8
   bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
@@ -301,6 +302,48 @@ In the console, open the payment and its **Messages** tab, then switch a pacs.00
 side-by-side**. **Create payment** shows the pacs.008 the form would produce, and **Accounts &
 ledger** issues a camt.053 for a customer or vostro account.
 
+### Sample calls: the network (all three banks)
+
+Start all three banks (bank-a, bank-b and bank-c, in three terminals). Payments then travel between
+them over Kafka; nothing below calls a bank on another bank's behalf, except the return in step 6,
+which is Bank C's own decision.
+
+```bash
+A=localhost:8081/api; B=localhost:8082/api; C=localhost:8083/api; RUN=$(date +%s)
+pay() { curl -s -X POST $A/payments -H 'Content-Type: application/json' -H "Idempotency-Key: m5-$1-$RUN" -d "{
+  \"debtorAccount\": \"$2\", \"creditorName\": \"Harlow & Finch Engineering Ltd\", \"creditorAccount\": \"$3\",
+  \"creditorAgentBic\": \"$4\", \"amount\": {\"amount\": \"$5\", \"currency\": \"$6\"}, \"chargeBearer\": \"SHAR\",
+  \"remittanceInformation\": \"M5 $1\"}" | jq -r .uetr; }
+
+# 1. Serial: Bank A → Bank B → Bank C (head office), EUR. Each bank takes its charge on the way.
+SERIAL=$(pay serial 514087234412 GB23MNPC40051288779901 MNPCGB2LXXX 1000.00 EUR)
+# 2. Cover: the pacs.008 goes straight to Bank C's Manchester branch, the money through Bank B (pacs.009 COV).
+COVER=$(pay cover 514087234412 GB23MNPC40051288779901 MNPCGB2L200 2000.00 EUR)
+# 3. Direct: Bank A → Bank C in GBP, on Bank A's vostro at Bank C.
+DIRECT=$(pay direct 514055218840 GB67MNPC40051271520093 MNPCGB2LXXX 500.00 GBP)
+sleep 4
+
+# 4. The same payment as each bank sees it
+for u in $SERIAL $COVER $DIRECT; do
+  echo "$u  A: $(curl -s $A/payments/$u | jq -r .payment.status)  B: $(curl -s $B/payments/$u | jq -r '.payment.status // "—"')  C: $(curl -s $C/payments/$u | jq -r '.payment.status // "—"')"
+done
+
+# 5. The tracker: the route end to end, with every deduction
+curl -s $A/tracker/$SERIAL | jq -c '{status, method, hops: [.hops[] | "\(.fromBic)→\(.toBic) \(.amount.amount) \(.reply)"], deductions: [.deductions[] | "\(.agentBic) \(.amount.amount)"], credited: .creditedAmount.amount}'
+curl -s $A/tracker/$COVER | jq -c '{status, method, hops: [.hops[] | "\(.fromBic)→\(.toBic) \(.reply)"], cover: [.coverLegs[] | "\(.type) \(.fromBic)→\(.toBic)"], credited: .creditedAmount.amount}'
+
+# 6. Bank C returns the serial payment (account closed); the return travels back through Bank B
+curl -s -X POST $C/payments/$SERIAL/return -H 'Content-Type: application/json' -H "Idempotency-Key: m5-ret-$RUN" \
+  -d '{"reasonCode": "AC04", "additionalInformation": "Account closed"}' | jq -c '{status}'
+sleep 3
+curl -s $A/tracker/$SERIAL | jq -c '{status, returnPath: [.returnPath[] | "\(.fromBic)→\(.toBic) \(.amount.amount)"]}'
+echo "SERIAL=$SERIAL COVER=$COVER"
+```
+
+In the console: open a payment and look at **Payment route**, or open **UETR tracker** and pick any
+payment the network carried. Switch the console to Bank B or Bank C to see the same payment from their
+side: incoming, passed on, or credited.
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -449,6 +492,38 @@ That is why CBPR+ limits InstrId to 16 characters while both formats are in use.
 moved on its account with us. In M8 that bank compares it with its own nostro. That comparison is
 reconciliation.
 
+## What you should learn from M5 (network)
+
+**A payment between banks is a chain of bilateral steps.** Bank A only talks to Bank B, and Bank B to
+Bank C. Each bank books its own leg on the account it shares with its neighbour, takes its charge,
+passes the payment on, and answers the bank before it. No bank ever sees another bank's books. What
+holds the chain together is the UETR, carried unchanged from end to end.
+
+**Settlement method says whose books move.** INDA: "debit my account with you". INGA: "I credited
+your account with me". CLRG: "through the RTGS". COVE: "the money comes separately". The receiving bank
+reads it to know which account the money arrives on.
+
+**Charges shrink the payment hop by hop.** Under SHAR, Bank B keeps 15 and Bank C keeps 10, so 1000
+sent becomes 975 credited. Every bank adds its deduction to ChrgsInf, so whoever reads the message (or
+the tracker) can explain the difference to the cent.
+
+**Outcomes come back the way the payment went.** A confirmation, a rejection or a return travels back
+through every bank in between, and each bank does its part: relay the ACSC; reverse its booking and
+relay the RJCT; book the return back and pass it on. Nothing is ever deleted: a reversal is a new
+entry.
+
+**Cover: the payment and the money take different roads.** The pacs.008 goes straight to the
+creditor's bank, and the pacs.009 goes to the correspondent, who moves the money and notifies the
+creditor's bank (camt.054). The creditor's bank must not pay out until the money is there. It also
+cannot count on the order the two messages arrive in.
+
+**The network delivers at least once, in no particular order.** Every receiver must cope with
+duplicates (event id, MsgId) and with late or out-of-order answers, which must never move a payment
+backwards.
+
+**A tracker is an observer.** Like the gpi Tracker, it reads every message and builds the end-to-end
+picture: hops, deductions, confirmations, cover legs, returns. It never takes part in the payment.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -458,7 +533,7 @@ reconciliation.
 | M2 | Payment hub: idempotent payment API, state machine, history, outbox + Kafka relay, crash safety, Payments screens | ✅ |
 | M3 | Reference data: effective-dated BIC directory, IBAN registry, routing rules, holidays, cut-offs; Overview and Reference data screens | ✅ |
 | M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 with loss report, raw store; Messages tab, pacs.008 preview | ✅ |
-| M5 | Network simulator, 3 banks, UETR tracker (serial and cover) | |
+| M5 | Network simulator: 3 banks over Kafka, incoming payments, hop-by-hop outcomes, serial and cover, UETR tracker; Payment route and tracker screens | ✅ |
 | M6 | Compliance: sanctions screening, 4-eyes release | |
 | M7 | Settlement: RTGS, deferred net settlement, instant | |
 | M8 | Reconciliation: camt.053 matching, breaks | |

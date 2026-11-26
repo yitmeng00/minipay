@@ -198,6 +198,45 @@ class CrashSafetyIT extends PaymentHubIntegrationTest {
         assertThat(messaging.forUetr(p.uetr())).hasSize(1); // one payment, one message on the wire
     }
 
+    @Test
+    void the_same_incoming_payment_delivered_to_racing_workers_is_one_payment_credited_once() throws Exception {
+        AccountView creditor = customer("MYR", "1.00");
+        AccountView vostroB = ledger.findAccountByNumber("T-VOSTRO-MYR-MNPB").orElseThrow();
+        AccountView rtgs = ledger.findAccountByNumber("T-NOSTRO-MYR-CB").orElseThrow();
+        com.minipay.common.money.Money fund = com.minipay.common.money.Money.of("1000.00", "MYR");
+        ledger.post(new com.minipay.ledger.api.PostEntryCommand("fund-" + UUID.randomUUID(), EntryType.SETTLE, null, null,
+                "Test funding", List.of(new com.minipay.ledger.api.PostingLine(rtgs.id(), com.minipay.ledger.api.Direction.D, fund),
+                new com.minipay.ledger.api.PostingLine(vostroB.id(), com.minipay.ledger.api.Direction.C, fund))));
+        com.minipay.common.money.Money m = com.minipay.common.money.Money.of("100.00", "MYR");
+        String raw = messaging.buildPacs008(new com.minipay.messaging.api.CreditTransfer(UUID.randomUUID().toString(),
+                "MNPB" + System.nanoTime() % 1_000_000_000_000L, "E2E-RACE", BANK_B, "MNPAMYKLXXX", BANK_B, "MNPAMYKLXXX",
+                "Kessler", "DE13500100600412280017", "Selangor", creditor.accountNumber(), m, m, List.of(),
+                ChargeBearer.SHAR, java.time.LocalDate.of(2026, 11, 24), com.minipay.messaging.api.SettlementMethod.INDA,
+                null, List.of(), null));
+
+        // At-least-once delivery: the same message arrives at ten consumers at once, each with its own event id.
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        CountDownLatch go = new CountDownLatch(1);
+        List<Future<PaymentView>> runs = new ArrayList<>();
+        try {
+            for (int i = 0; i < 10; i++) {
+                runs.add(pool.submit(() -> {
+                    go.await();
+                    return hub.receiveMessage("net:" + UUID.randomUUID(), raw).value();
+                }));
+            }
+            go.countDown();
+            java.util.Set<UUID> ids = new java.util.HashSet<>();
+            for (Future<PaymentView> f : runs) {
+                ids.add(f.get(60, TimeUnit.SECONDS).id()); // no delivery may fail
+            }
+            assertThat(ids).hasSize(1);
+        } finally {
+            pool.shutdown();
+        }
+        assertThat(reload(creditor).booked()).isEqualTo(com.minipay.common.money.Money.of("99.00", "MYR")); // 1 + 100 − 2, once
+    }
+
     // ------------------------------------------------------------------ outbox
 
     @Test
@@ -235,7 +274,7 @@ class CrashSafetyIT extends PaymentHubIntegrationTest {
             assertThat(jdbc.sql("""
                     SELECT count(*) FROM payment.outbox_event
                      WHERE aggregate_id = :id AND published_at IS NULL
-                    """).param("id", p.id()).query(Long.class).single()).isEqualTo(5L);
+                    """).param("id", p.id()).query(Long.class).single()).isEqualTo(6L); // 5 status events + the pacs.008
             assertThat(jdbc.sql("SELECT max(attempts) FROM payment.outbox_event WHERE aggregate_id = :id")
                     .param("id", p.id()).query(Integer.class).single()).isPositive();
         } finally {

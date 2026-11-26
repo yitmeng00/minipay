@@ -2,10 +2,12 @@ package com.minipay.messaging;
 
 import com.minipay.common.iso.ChargeBearer;
 import com.minipay.common.money.Money;
+import com.minipay.messaging.api.Charge;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.SettlementMethod;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /** A realistic outgoing payment: Bank A pays Harlow &amp; Finch in London, serially via Bank B. */
 public final class Fixtures {
@@ -27,7 +29,7 @@ public final class Fixtures {
         return new CreditTransfer(UETR, "MNPA261124000912", "INV-HF-2026-1187", "MNPAMYKLXXX", "MNPBDEFFXXX",
                 "MNPAMYKLXXX", "MNPCGB2LXXX", "Selangor Precision Components Sdn Bhd", "514087234412",
                 creditorName, "GB96MNPC60161331926819", interbank, amount,
-                bearer == ChargeBearer.CRED ? fee : Money.zero("EUR"), bearer, LocalDate.of(2026, 11, 24),
-                SettlementMethod.INDA, remittance);
+                bearer == ChargeBearer.CRED ? List.of(new Charge(fee, "MNPAMYKLXXX")) : List.of(), bearer,
+                LocalDate.of(2026, 11, 24), SettlementMethod.INDA, null, List.of(), remittance);
     }
 }

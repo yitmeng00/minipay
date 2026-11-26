@@ -14,6 +14,7 @@ import com.prowidesoftware.swift.model.mx.dic.RemittanceInformation16;
 import com.prowidesoftware.swift.model.mx.dic.SettlementInstruction7;
 import com.prowidesoftware.swift.model.mx.dic.SettlementMethod1Code;
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * pacs.008.001.08, one transaction per message (CBPR+ allows no batches).
@@ -21,7 +22,7 @@ import java.time.OffsetDateTime;
  * <pre>
  *   GrpHdr        MsgId, CreDtTm, NbOfTxs = 1, SttlmInf/SttlmMtd (INDA, INGA, COVE, CLRG)
  *   CdtTrfTxInf   PmtId (InstrId, EndToEndId, UETR), IntrBkSttlmAmt + Dt, InstdAmt, ChrgBr,
- *                 ChrgsInf (our charges), InstgAgt, InstdAgt, Dbtr, DbtrAcct, DbtrAgt,
+ *                 ChrgsInf (each bank's charges), PrvsInstgAgt1..3, InstgAgt, InstdAgt, Dbtr, DbtrAcct, DbtrAgt,
  *                 CdtrAgt, Cdtr, CdtrAcct, RmtInf/Ustrd
  * </pre>
  */
@@ -31,11 +32,16 @@ public final class Pacs008Writer {
     }
 
     public static MxPacs00800108 build(CreditTransfer t, String msgId, OffsetDateTime created) {
+        SettlementInstruction7 sttlm = new SettlementInstruction7().setSttlmMtd(SettlementMethod1Code.valueOf(t.settlementMethod().name()));
+        if (t.coverAgentBic() != null) {
+            // Cover method: the money travels separately, through this bank (InstgRmbrsmntAgt).
+            sttlm.setInstgRmbrsmntAgt(Mx.agent(t.coverAgentBic()));
+        }
         GroupHeader93 grpHdr = new GroupHeader93()
                 .setMsgId(msgId)
                 .setCreDtTm(created)
                 .setNbOfTxs("1")
-                .setSttlmInf(new SettlementInstruction7().setSttlmMtd(SettlementMethod1Code.valueOf(t.settlementMethod().name())));
+                .setSttlmInf(sttlm);
 
         CreditTransferTransaction39 tx = new CreditTransferTransaction39()
                 .setPmtId(new PaymentIdentification7()
@@ -56,9 +62,20 @@ public final class Pacs008Writer {
         if (t.instructedAmount() != null) {
             tx.setInstdAmt(Mx.amount(t.instructedAmount()));
         }
-        if (t.ourCharges() != null && t.ourCharges().isPositive()) {
-            // Who took what: under CRED this explains why IntrBkSttlmAmt is less than InstdAmt.
-            tx.addChrgsInf(new Charges7().setAmt(Mx.amount(t.ourCharges())).setAgt(Mx.agent(t.instructingAgentBic())));
+        // Who took what, hop by hop: this is why IntrBkSttlmAmt can be less than InstdAmt.
+        for (com.minipay.messaging.api.Charge c : t.charges()) {
+            tx.addChrgsInf(new Charges7().setAmt(Mx.amount(c.amount())).setAgt(Mx.agent(c.agentBic())));
+        }
+        // Banks before the instructing agent, oldest first (PrvsInstgAgt1 is the first bank on the route).
+        List<String> prev = t.previousAgents();
+        if (prev.size() > 0) {
+            tx.setPrvsInstgAgt1(Mx.agent(prev.get(0)));
+        }
+        if (prev.size() > 1) {
+            tx.setPrvsInstgAgt2(Mx.agent(prev.get(1)));
+        }
+        if (prev.size() > 2) {
+            tx.setPrvsInstgAgt3(Mx.agent(prev.get(2)));
         }
         if (t.remittanceInformation() != null && !t.remittanceInformation().isBlank()) {
             tx.setRmtInf(new RemittanceInformation16().addUstrd(t.remittanceInformation()));

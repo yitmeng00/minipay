@@ -10,5 +10,57 @@
     </parent>
     <artifactId>network-simulator</artifactId>
     <name>MiniPay :: Network simulator</name>
-    <description>Simulated network between the three banks plus the UETR tracker (serial and cover method). Placeholder until milestone M5.</description>
+    <description>The simulated network between the banks: each bank's inbox, and the UETR tracker (serial and cover).</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <!-- Only the api packages are used (ArchUnit-enforced). -->
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>messaging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.minipay</groupId>
+            <artifactId>payment-hub</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

@@ -93,13 +93,14 @@ class PaymentApiIT extends PaymentHubIntegrationTest {
         String uetr = JsonPath.read(created, "$.uetr");
 
         mvc.perform(post("/api/payments/" + uetr + "/network-events").header("Idempotency-Key", key())
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"type\": \"SETTLED\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ILLEGAL_TRANSITION"));
-        mvc.perform(post("/api/payments/" + uetr + "/network-events").header("Idempotency-Key", key())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"type\": \"ACCEPTED\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("ACKED"));
+        // Acknowledged twice by a new event (not a replay): the state machine refuses ACKED -> ACKED.
+        mvc.perform(post("/api/payments/" + uetr + "/network-events").header("Idempotency-Key", key())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"type\": \"ACCEPTED\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ILLEGAL_TRANSITION"));
     }
 
     @Test

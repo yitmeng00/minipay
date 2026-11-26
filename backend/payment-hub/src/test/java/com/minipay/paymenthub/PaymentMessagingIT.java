@@ -134,11 +134,21 @@ class PaymentMessagingIT extends PaymentHubIntegrationTest {
     }
 
     @Test
-    void a_rejection_after_sent_is_stored_but_not_acted_on_until_m5() {
-        PaymentView p = sent("500.00");
-        assertThatThrownBy(() -> hub.receiveMessage(key(), statusFrom(BANK_B, p, TransactionStatus.RJCT)))
-                .extracting("error").isEqualTo(PaymentError.UNSUPPORTED_MESSAGE);
-        assertThat(hub.get(p.uetr()).payment().status()).isEqualTo(PaymentStatus.SENT);
+    void a_rejection_by_the_next_bank_reverses_our_booking_and_refunds_the_debtor() {
+        AccountView debtor = customer("EUR", "1000.00");
+        Money nostroBefore = reload(eurNostro).booked();
+        PaymentView p = hub.create(payment(debtor, "500.00", ChargeBearer.SHAR)).value();
+        assertThat(reload(debtor).booked()).isEqualTo(eur("480.00")); // 500 + 20 fee booked
+
+        PaymentView rejected = hub.receiveMessage(key(), statusFrom(BANK_B, p, TransactionStatus.RJCT)).value();
+
+        assertThat(rejected.status()).isEqualTo(PaymentStatus.REJECTED);
+        assertThat(rejected.rejectionReason()).isEqualTo("AC04");
+        assertThat(reload(debtor).booked()).isEqualTo(eur("1000.00"));   // principal and fee back
+        assertThat(reload(eurNostro).booked()).isEqualTo(nostroBefore);
+        assertThat(ledger.entriesForPayment(p.id())).extracting(JournalEntryView::entryType)
+                .containsExactly(EntryType.RESERVE, EntryType.RELEASE, EntryType.SETTLE, EntryType.FEE,
+                        EntryType.REVERSAL, EntryType.REVERSAL);
     }
 
     @Test
@@ -149,7 +159,7 @@ class PaymentMessagingIT extends PaymentHubIntegrationTest {
         hub.receiveMessage(key(), statusFrom(BANK_B, p, TransactionStatus.ACSC));
         String pacs004 = messaging.buildPacs004(new PaymentReturn(BANK_B, "MNPAMYKLXXX", "MNPC-RTN-1", pacs008(p).msgId(),
                 p.instructionId(), p.endToEndId(), p.uetr(), eur("1000.00"), eur("975.00"), LocalDate.of(2026, 11, 24),
-                List.of(new PaymentReturn.Charge(eur("25.00"), BANK_B)), "AC04", "Account closed"));
+                List.of(new com.minipay.messaging.api.Charge(eur("25.00"), BANK_B)), "AC04", "Account closed"));
 
         PaymentView returned = hub.receiveMessage(key(), pacs004).value();
         hub.receiveMessage(key(), pacs004);

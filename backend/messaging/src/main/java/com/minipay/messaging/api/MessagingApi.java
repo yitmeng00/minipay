@@ -17,8 +17,29 @@ public interface MessagingApi {
      */
     MessageView issuePacs008(String businessKey, CreditTransfer transfer);
 
+    /** Builds, checks and stores an outgoing pacs.009 COV (the money leg of a cover payment). Idempotent per key. */
+    MessageView issuePacs009(String businessKey, CoverTransfer cover);
+
+    /** Builds, checks and stores a pacs.002 we send. Idempotent per key. */
+    MessageView issuePacs002(String businessKey, StatusReport report);
+
+    /** Builds, checks and stores a pacs.004 we send. Idempotent per key. */
+    MessageView issuePacs004(String businessKey, PaymentReturn paymentReturn);
+
+    /** Builds, checks and stores a camt.054 credit notification we send. Idempotent per key. */
+    MessageView issueCamt054(String businessKey, CreditNotification notification);
+
     /** The pacs.008 this transfer would produce, without storing anything (a preview). */
     String renderPacs008(CreditTransfer transfer);
+
+    /** Builds a pacs.008 with a fresh MsgId (not stored), e.g. to play another bank in a simulation or a test. */
+    String buildPacs008(CreditTransfer transfer);
+
+    /** Builds a pacs.009 COV (not stored). */
+    String buildPacs009(CoverTransfer cover);
+
+    /** Builds a camt.054 credit notification (not stored). */
+    String buildCamt054(CreditNotification notification);
 
     /** Builds a pacs.002 (not stored: the caller decides whether it is sent or received). */
     String buildPacs002(StatusReport report);
@@ -34,6 +55,21 @@ public interface MessagingApi {
     InboundMessage receive(String raw);
 
     MessageDetail get(UUID id);
+
+    /** Reads a message without storing it: what it says, and whether it passes the checks. */
+    MessageSummary inspect(String raw);
+
+    /** The customer credit transfer in a stored pacs.008. */
+    CreditTransfer creditTransfer(UUID messageId);
+
+    /** The cover transfer in a stored pacs.009. */
+    CoverTransfer coverTransfer(UUID messageId);
+
+    /** The return in a stored pacs.004. */
+    PaymentReturn paymentReturn(UUID messageId);
+
+    /** The notification in a stored camt.054. */
+    CreditNotification creditNotification(UUID messageId);
 
     /** Every message about one payment, oldest first. */
     List<MessageView> forUetr(String uetr);

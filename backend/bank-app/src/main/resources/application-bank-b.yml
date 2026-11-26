@@ -17,6 +17,9 @@ minipay:
   payments:
     outward-fees:
       EUR: 15.00
+    # Our charge on a payment another bank sends us, as intermediary or creditor's bank (SHAR/CRED only).
+    processing-fees:
+      EUR: 15.00
   seed:
     enabled: true
     accounts:
@@ -25,9 +28,13 @@ minipay:
       # Mirror of Bank A's 1101-EUR-MNPB nostro. Same balance — that is what reconciliation (M8) checks.
       - { number: DE87500100600778812003, type: VOSTRO, currency: EUR, owner: "Vostro - Bank A (EUR)", counterparty-bic: MNPAMYKLXXX, opening-balance: 2899613.17, funded-from: 1001-EUR-T2 }
       - { number: DE13500100600412280017, type: CUSTOMER, currency: EUR, owner: "Kessler Maschinenbau GmbH", opening-balance: 4812330.00, funded-from: 1001-EUR-T2 }
+      # Bank C's EUR account with us: Bank B is Bank C's EUR correspondent. Mirrors Bank C's 1103-EUR-MNPB.
+      - { number: DE65500100600778812011, type: VOSTRO, currency: EUR, owner: "Vostro - Bank C (EUR)", counterparty-bic: MNPCGB2LXXX, opening-balance: 750000.00, funded-from: 1001-EUR-T2 }
       - { number: DE34500100600533190042, type: CUSTOMER, currency: EUR, owner: "Rheinwerk Logistik GmbH",   opening-balance: 1207450.25, funded-from: 1001-EUR-T2 }
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - correspondent charges EUR" }
     # Bank B's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: EUR, method: DIRECT, settlement-account: DE87500100600778812003, priority: 10, from: "2024-01-01", release: v2024.01.1 }
+      # Bank C in EUR: direct, on Bank C's vostro with us (we credit it on our books: SttlmMtd INGA).
+      - { id: R-003, destination: "MNPCGB2L*", currency: EUR, method: DIRECT, settlement-account: DE65500100600778812011, priority: 10, from: "2024-01-01", release: v2024.01.1 }
       - { id: R-002, destination: "*",         currency: EUR, method: RTGS,   settlement-account: 1001-EUR-T2,            priority: 50, from: "2024-01-01", release: v2024.01.1 }

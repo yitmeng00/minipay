@@ -19,7 +19,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { label: 'Payments', icon: Icons.payments, to: '/payments' },
       { label: 'UETR tracker', icon: Icons.settlement, to: '/tracker' },
       { label: 'Sanctions queue', icon: Icons.sanctions, to: '/sanctions', count: 'sanctions' },
-      { label: 'Settlement', icon: Icons.settlement, milestone: 'M7' },
+      { label: 'Settlement', icon: Icons.settlement, to: '/settlement' },
       { label: 'Reconciliation', icon: Icons.recon, milestone: 'M8' },
     ],
   },

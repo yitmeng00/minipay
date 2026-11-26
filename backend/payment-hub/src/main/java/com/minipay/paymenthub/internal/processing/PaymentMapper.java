@@ -20,7 +20,8 @@ public final class PaymentMapper {
                 p.creditorName(), p.creditorAccount(), p.creditorAgentBic(), p.instructedAgentBic(),
                 p.remittanceInfo(), p.requestedExecDate(), p.executionDate(), p.valueDate(), p.routingRuleId(),
                 p.kind(), p.instructingAgentBic(), p.settlementMethod(), p.coverAgentBic(),
-                p.rejectionReason(), p.rejectionDetail(), p.reservationId(), p.createdAt(), p.updatedAt());
+                p.rejectionReason(), p.rejectionDetail(), p.reservationId(), p.createdAt(), p.updatedAt(),
+                p.serviceLevel(), p.clearingSystem(), p.viaBic());
     }
 
     public static StateChangeView toView(PaymentStateHistory h) {

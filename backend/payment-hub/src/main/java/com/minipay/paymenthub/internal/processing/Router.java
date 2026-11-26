@@ -1,5 +1,10 @@
 package com.minipay.paymenthub.internal.processing;
 
+import com.minipay.paymenthub.api.ServiceLevel;
+import com.minipay.refdata.api.ClearingSystemView;
+import java.util.EnumSet;
+import java.util.Set;
+
 import com.minipay.ledger.api.AccountStatus;
 import com.minipay.ledger.api.AccountType;
 import com.minipay.ledger.api.AccountView;
@@ -28,10 +33,16 @@ public class Router {
     /**
      * @param instructedAgentBic who receives our pacs.008 (InstdAgt)
      * @param nextHopBic         the correspondent for SERIAL and COVER routes, else null
+     * @param system             the clearing system the payment goes through (RTGS, DNS, INSTANT, ADR-008), else null
      */
     public record Route(String ruleId, String releaseVersion, RoutingMethod method, long settlementAccountId,
                         String settlementAccountNumber, AccountType settlementAccountType, String instructedAgentBic,
-                        String nextHopBic) {
+                        String nextHopBic, ClearingSystemView system) {
+
+        /** Who our message is addressed to: the system's operator, or the instructed agent. */
+        public String messageReceiverBic() {
+            return system != null ? system.operatorBic() : instructedAgentBic;
+        }
 
         public String describe() {
             return ruleId + " (" + releaseVersion + ", " + method + ")";
@@ -39,12 +50,13 @@ public class Router {
 
         /**
          * pacs.008 SttlmMtd: on whose books the money moves. Our nostro at them → INDA (they debit
-         * it); their vostro with us → INGA (we credit it); a cover payment → COVE; an RTGS → CLRG.
+         * it); their vostro with us → INGA (we credit it); a cover payment → COVE; through a clearing
+         * system (RTGS, DNS, instant) → CLRG.
          */
         public SettlementMethod settlementMethod() {
             return switch (method) {
                 case COVER -> SettlementMethod.COVE;
-                case RTGS -> SettlementMethod.CLRG;
+                case RTGS, DNS, INSTANT -> SettlementMethod.CLRG;
                 default -> settlementAccountType == AccountType.VOSTRO ? SettlementMethod.INGA : SettlementMethod.INDA;
             };
         }
@@ -63,7 +75,15 @@ public class Router {
     }
 
     public Outcome route(String creditorAgentBic, String currency, LocalDate valueDate) {
-        RouteResolution resolution = refdata.route(creditorAgentBic, currency, valueDate);
+        return route(creditorAgentBic, currency, valueDate, ServiceLevel.NORM);
+    }
+
+    /**
+     * The routes a service level may take (ADR-008): an instant payment only the instant scheme; an urgent one
+     * anything but the ACH, whose cycles would hold it back; a normal one anything but the instant scheme.
+     */
+    public Outcome route(String creditorAgentBic, String currency, LocalDate valueDate, ServiceLevel level) {
+        RouteResolution resolution = refdata.route(creditorAgentBic, currency, valueDate, allowed(level));
         if (resolution.route().isEmpty()) {
             return new Outcome(Optional.empty(), resolution.problem());
         }
@@ -77,7 +97,15 @@ public class Router {
         }
         AccountView a = account.get();
         return new Outcome(Optional.of(new Route(rule.ruleId(), rule.releaseVersion(), rule.method(), a.id(),
-                a.accountNumber(), a.type(), r.instructedAgentBic(), rule.nextHopBic())), null);
+                a.accountNumber(), a.type(), r.instructedAgentBic(), rule.nextHopBic(), r.system())), null);
+    }
+
+    static Set<RoutingMethod> allowed(ServiceLevel level) {
+        return switch (level == null ? ServiceLevel.NORM : level) {
+            case INST -> EnumSet.of(RoutingMethod.INSTANT);
+            case HIGH -> EnumSet.complementOf(EnumSet.of(RoutingMethod.INSTANT, RoutingMethod.DNS));
+            case NORM -> EnumSet.complementOf(EnumSet.of(RoutingMethod.INSTANT));
+        };
     }
 
     private static String unusable(AccountView a, String currency) {

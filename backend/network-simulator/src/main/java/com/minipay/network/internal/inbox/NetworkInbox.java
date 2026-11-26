@@ -3,6 +3,8 @@ package com.minipay.network.internal.inbox;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.minipay.paymenthub.api.PaymentException;
 import com.minipay.paymenthub.api.PaymentHubApi;
+import com.minipay.settlement.api.SettlementException;
+import com.minipay.settlement.api.SettlementOperatorApi;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.header.Header;
@@ -29,10 +31,12 @@ class NetworkInbox {
     private static final Logger log = LoggerFactory.getLogger(NetworkInbox.class);
 
     private final PaymentHubApi hub;
+    private final SettlementOperatorApi operator;
     private final ObjectMapper json;
 
-    NetworkInbox(PaymentHubApi hub, ObjectMapper json) {
+    NetworkInbox(PaymentHubApi hub, SettlementOperatorApi operator, ObjectMapper json) {
         this.hub = hub;
+        this.operator = operator;
         this.json = json;
     }
 
@@ -40,6 +44,18 @@ class NetworkInbox {
     void onMessage(ConsumerRecord<String, String> record) throws Exception {
         Envelope e = json.readValue(record.value(), Envelope.class);
         String eventId = header(record, "event-id");
+        if (operator.isOperator()) {
+            // The central bank's inbox: payment orders for its clearing systems (ADR-008). A redelivery is the
+            // same message, which the message store recognises by (sender, MsgId).
+            try {
+                var receipt = operator.receive(e.raw());
+                log.info("{} {} from {} → transfer {} {}{}", e.type(), e.msgId(), e.sender(), receipt.transferId(),
+                        receipt.status(), receipt.replayed() ? " (already processed)" : "");
+            } catch (SettlementException ex) {
+                log.info("{} {} from {} stored, not acted on: {}", e.type(), e.msgId(), e.sender(), ex.getMessage());
+            }
+            return;
+        }
         try {
             var result = hub.receiveMessage("net:" + eventId, e.raw());
             log.info("{} {} from {} → payment {} {}{}", e.type(), e.msgId(), e.sender(), result.value().uetr(),

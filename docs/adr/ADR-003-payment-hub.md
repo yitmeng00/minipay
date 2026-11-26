@@ -6,7 +6,9 @@
 - **Amended by:** ADR-004 (M3): reference-data validation, routing rules, execution and value dates;
   ADR-005 (M4): the pacs.008 is issued when sending, and network outcomes arrive as pacs.002 / pacs.004;
   ADR-006 (M5): one state machine table per direction, incoming payments, outcomes after SENT (RJCT, early returns);
-  ADR-007 (M6): real screening; HELD_COMPLIANCE released or rejected (RR04) by compliance decisions, both directions
+  ADR-007 (M6): real screening; HELD_COMPLIANCE released or rejected (RR04) by compliance decisions, both directions;
+  ADR-008 (M7): service levels (normal, urgent, instant); payments through T2, MiniPay Net and MiniPay Instant;
+  an incoming instant payment is ACKED (accepted to the scheme) before it is credited
 
 ## Context
 

@@ -75,6 +75,22 @@ class ModuleBoundariesTest {
     }
 
     @Test
+    void the_clearing_systems_reach_the_network_only_through_the_outbox() {
+        // The operator (ADR-008) keeps its own books on the ledger and sends its messages through the hub's
+        // outbox (NetworkOutbox); it never calls a bank's payments, compliance or the network module.
+        noClasses().that().resideInAPackage("com.minipay.settlement..")
+                .should().dependOnClassesThat().resideInAnyPackage("com.minipay.compliance..", "com.minipay.network..",
+                        "com.minipay.recon..")
+                .check(classes);
+        noClasses().that().resideInAPackage("com.minipay.settlement..")
+                .should().dependOnClassesThat(com.tngtech.archunit.core.domain.JavaClass.Predicates
+                        .resideInAPackage("com.minipay.paymenthub..")
+                        .and(com.tngtech.archunit.base.DescribedPredicate.not(
+                                com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName("NetworkOutbox"))))
+                .check(classes);
+    }
+
+    @Test
     void modules_are_free_of_cycles() {
         slices().matching("com.minipay.(*)..").should().beFreeOfCycles().check(classes);
     }

@@ -3,6 +3,7 @@ import type { ChargeBearer, PaymentStatus } from './types'
 
 /** ISO 20022 ExternalStatusReason1Code / return reasons used by MiniPay, with their official names. */
 export const REASON: Record<string, string> = {
+  AB05: 'Timeout at the creditor agent',
   AC01: 'Incorrect account number',
   AC03: 'Invalid creditor account number',
   AC04: 'Closed account number',
@@ -23,6 +24,7 @@ export const REASON: Record<string, string> = {
   RC01: 'Bank identifier incorrect',
   RR03: 'Missing creditor name or address',
   RR04: 'Regulatory reason',
+  TM01: 'Received after the cut-off',
 }
 
 /** gpi-style tracker status of a payment as the network sees it. */

@@ -53,6 +53,8 @@ function bankName(bic: string | null) {
   return BANKS.find((b) => b.bic.slice(0, 8) === bic.slice(0, 8))
 }
 
+const CLEARING: Record<string, string> = { T2: 'T2 (RTGS)', MPNET: 'MiniPay Net (DNS)', MPINST: 'MiniPay Instant' }
+
 // ---------------------------------------------------------------- lifecycle
 
 /** The happy path this payment follows: outgoing, incoming and credited here, incoming by cover, or passed on. */
@@ -60,6 +62,8 @@ function mainPath(p: Payment): PaymentStatus[] {
   if (p.direction === 'OUTGOING') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'FUNDS_RESERVED', 'SENT', 'ACKED', 'SETTLED']
   if (p.instructedAgentBic && p.kind === 'CUSTOMER') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'SENT', 'ACKED', 'SETTLED']
   if (p.settlementMethod === 'COVE') return ['RECEIVED', 'VALIDATED', 'SCREENED', 'AWAITING_COVER', 'SETTLED']
+  // Instant to us: accepted to the scheme (ACKED), credited when it confirms settlement (M7).
+  if (p.serviceLevel === 'INST' && p.viaBic) return ['RECEIVED', 'VALIDATED', 'SCREENED', 'ACKED', 'SETTLED']
   return ['RECEIVED', 'VALIDATED', 'SCREENED', 'SETTLED']
 }
 
@@ -507,7 +511,14 @@ export function PaymentDetailPage() {
                 {p.kind === 'COVER' ? 'cover payment · pacs.009.001.08 COV' : 'customer credit transfer · pacs.008.001.08'}
                 {p.instructingAgentBic && <> · from <span className="mono">{p.instructingAgentBic}</span></>}
                 {p.settlementMethod && <> · SttlmMtd <span className="mono">{p.settlementMethod}</span></>}
+                {p.clearingSystem && (
+                  <>
+                    {' '}· through <Link to="/settlement">{CLEARING[p.clearingSystem] ?? p.clearingSystem}</Link>{' '}
+                    (<span className="mono">{p.viaBic}</span>)
+                  </>
+                )}
               </span>
+              {p.serviceLevel !== 'NORM' && <Chip small tone={p.serviceLevel === 'INST' ? 'info' : 'warn'}>{p.serviceLevel === 'INST' ? 'Instant' : 'Urgent'}</Chip>}
             </div>
             <div className="flex flex-wrap items-baseline gap-3">
               <span className="text-[32px] font-semibold tracking-[-0.02em] tabular-nums">{formatAmount(p.amount.amount)}</span>

@@ -37,7 +37,19 @@ minipay:
       # for review at every bank on the way (M6, ADR-007).
       - { number: GB20MNPC40051290550011, type: CUSTOMER, currency: EUR, owner: "Oakridge Interiors Ltd" }
       - { number: 4020-FEE-EUR, type: FEE_INCOME, currency: EUR, owner: "Fee income - EUR" }
+      # M7: our euro accounts at the central bank (ADR-008), mirrors of the operator's RTGS-MNPCGB2L and
+      # INST-MNPCGB2L. A London bank takes part in the euro systems as if through a euro-area branch.
+      # Like Bank B's 1001-EUR-T2 it may show less than zero: T2's queue decides about liquidity, not our mirror.
+      - { number: 1004-EUR-T2, type: NOSTRO, currency: EUR, owner: "T2 account (central bank)", counterparty-bic: MNCBDEFFXXX, allow-overdraft: true }
+      - { number: GB23MNPC40051277330021, type: CUSTOMER, currency: EUR, owner: "Pennine Textiles Ltd (EUR)", opening-balance: 2500000.00, funded-from: 1004-EUR-T2 }
+      - { number: 1005-EUR-INST, type: NOSTRO, currency: EUR, owner: "MiniPay Instant position (central bank)", counterparty-bic: MNCBDEFFXXX, opening-balance: 500000.00, funded-from: 1004-EUR-T2 }
     # Bank C's routing table (ADR-004): Bank A on its vostro with us, everyone else through the RTGS.
     routing-rules:
       - { id: R-001, destination: "MNPAMYKL*", currency: GBP, method: DIRECT, settlement-account: GB86MNPC40051288334410, priority: 10, from: "2024-01-01", release: v2024.01.1 }
       - { id: R-002, destination: "*",         currency: GBP, method: RTGS,   settlement-account: 1001-GBP-RTGS,          priority: 50, from: "2024-01-01", release: v2024.01.1 }
+      # M7 (ADR-008): EUR through the euro clearing systems; Bank A, which is not a participant, through
+      # Bank B, our EUR correspondent.
+      - { id: R-003, destination: "MNPAMYKL*", currency: EUR, method: SERIAL,  next-hop: MNPBDEFFXXX, settlement-account: 1103-EUR-MNPB, priority: 10, from: "2026-11-25", release: v2026.11.9 }
+      - { id: R-004, destination: "*",         currency: EUR, method: DNS,     settlement-account: 1004-EUR-T2,   priority: 40, from: "2026-11-25", release: v2026.11.9 }
+      - { id: R-005, destination: "*",         currency: EUR, method: RTGS,    settlement-account: 1004-EUR-T2,   priority: 50, from: "2026-11-25", release: v2026.11.9 }
+      - { id: R-006, destination: "*",         currency: EUR, method: INSTANT, settlement-account: 1005-EUR-INST, priority: 55, from: "2026-11-25", release: v2026.11.9 }

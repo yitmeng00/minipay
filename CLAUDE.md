@@ -6,11 +6,12 @@ matter more than feature count. Explain payment-domain decisions in code comment
 ## Commands
 
 ```bash
-docker compose up -d                                   # 3 × Postgres (5433/5434/5435) + Kafka
+docker compose up -d                                   # 4 × Postgres (5433/5434/5435 banks, 5436 central bank) + Kafka
 cd backend && ./mvnw verify                            # unit (*Test) + Testcontainers (*IT) + ArchUnit
 ./mvnw -pl bank-app clean package -DskipTests          # fat jar goes stale if only other modules changed
 ./mvnw install -DskipTests && ./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=bank-a   # :8081
-cd frontend/ops-console && npm run dev                 # :5173, proxies /bank-a|b|c → 8081|8082|8083
+./mvnw -pl bank-app spring-boot:run -Dspring-boot.run.profiles=operator   # the central bank (M7), :8084
+cd frontend/ops-console && npm run dev                 # :5173, proxies /bank-a|b|c|operator → 8081|8082|8083|8084
 cd frontend/ops-console && npm run build && npm run lint
 ```
 
@@ -50,8 +51,18 @@ JDK 21 is required (on this machine: `export JAVA_HOME=/opt/homebrew/opt/openjdk
   back); case per hit; decisions lock the case row; release ≥ four-eyes threshold needs a 2nd person (DB trigger too).
   Closing decision → `ComplianceDecisionMade` event after commit → hub resumes; sweeper covers HELD_COMPLIANCE.
   Reject = RR04, RJCT AddtlInf only "Regulatory reason". Sanctions lists are fictional, effective-dated seed data.
+- Settlement (M7, `settlement` module, ADR-008): a 4th instance, profile `operator` (MNCBDEFFXXX, :8084, DB 5436),
+  runs T2 (RTGS queue, cut-off AM04), MiniPay Net (DNS cycles, multilateral netting, unwinding) and MiniPay Instant
+  (prefunded positions, 10 s timeout AB05). Its ledger is the system's own books: booking + status + messages in ONE
+  tx, under participant row locks (BIC order). V-shape: pacs.008 AppHdr/To = operator, InstdAgt = creditor bank,
+  ClrSys/Prtry = system; the operator forwards the Document byte for byte (`MessagingApi.relay`). Sends only through
+  `paymenthub.api.NetworkOutbox`. Participants B, C; D, E played by the operator; A indirect via B. Banks mirror their
+  accounts (`1001-EUR-T2` etc., T2 mirrors may go negative). Payment `serviceLevel` NORM/HIGH/INST restricts routing
+  methods (`clearing_system` refdata; methods DNS, INSTANT). Incoming instant: ACKED (ACCP to the operator), credited
+  on its ACSC. A payment that arrived via T2/DNS is returned (pacs.004 via the operator), never RJCT.
 - `commons-lang3.version` is overridden in the parent POM (Prowide needs ≥ 3.18; Boot manages 3.17).
-- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance.
+- ADRs: 001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance,
+  008 settlement.
 
 ## Non-negotiable rules
 

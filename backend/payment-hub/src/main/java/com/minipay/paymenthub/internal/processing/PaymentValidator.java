@@ -102,7 +102,9 @@ public class PaymentValidator {
         if (scheme.isEmpty()) {
             return Validation.reject("AM03", "We do not settle " + p.currency() + ": no settlement scheme in reference data");
         }
-        LocalDate executionDate = refdata.nextBusinessDay(p.currency(), p.requestedExecDate());
+        // An instant payment executes on the requested day whatever the calendar says: instant schemes run 24/7/365.
+        boolean instant = p.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.INST;
+        LocalDate executionDate = instant ? p.requestedExecDate() : refdata.nextBusinessDay(p.currency(), p.requestedExecDate());
 
         // --- Creditor agent exists on that date.
         Optional<BicEntry> agentEntry = refdata.findBic(agent.value(), executionDate);
@@ -117,9 +119,10 @@ public class PaymentValidator {
         }
 
         // --- A route on that date.
-        Router.Outcome route = router.route(agent.value(), p.currency(), executionDate);
+        Router.Outcome route = router.route(agent.value(), p.currency(), executionDate, p.serviceLevel());
         if (route.route().isEmpty()) {
-            return Validation.reject("CNOR", "No route on " + executionDate + ": " + route.problem());
+            return Validation.reject("CNOR", "No " + (instant ? "instant " : p.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.HIGH
+                    ? "urgent " : "") + "route on " + executionDate + ": " + route.problem());
         }
 
         String when = executionDate.equals(p.requestedExecDate())

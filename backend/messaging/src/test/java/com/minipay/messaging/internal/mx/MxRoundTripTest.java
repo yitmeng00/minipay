@@ -174,4 +174,46 @@ class MxRoundTripTest {
         assertThat(p.status()).isEqualTo("CRDT");
         assertThat(TransferReader.camt054((MxCamt05400108) AbstractMX.parse(raw))).isEqualTo(n);
     }
+
+    @Test
+    void through_a_clearing_system_the_apphdr_goes_to_the_operator_and_the_system_is_named() {
+        CreditTransfer f = Fixtures.transfer();
+        CreditTransfer urgent = new CreditTransfer(f.uetr(), f.instructionId(), f.endToEndId(), "MNPCGB2LXXX", "MNPBDEFFXXX",
+                f.debtorAgentBic(), f.creditorAgentBic(), f.debtorName(), f.debtorAccount(), f.creditorName(),
+                f.creditorAccount(), f.interbankAmount(), f.instructedAmount(), List.of(), f.chargeBearer(),
+                f.settlementDate(), SettlementMethod.CLRG, null, List.of(), null,
+                new com.minipay.messaging.api.Clearing("MPINST", "HIGH", true, "MNCBDEFFXXX"));
+        String raw = Mx.render(Pacs008Writer.build(urgent, "MNPC20261124-008-000003", Fixtures.CREATED));
+        MxReader.Parsed p = MxReader.read(raw, "MNCBDEFFXXX");
+        assertThat(p.errors()).isEmpty();
+        assertThat(p.to()).isEqualTo("MNCBDEFFXXX");
+        assertThat(raw).contains("<pacs:Prtry>MPINST</pacs:Prtry>").contains("<pacs:InstrPrty>HIGH</pacs:InstrPrty>")
+                .containsPattern("<pacs:LclInstrm>\\s*<pacs:Cd>INST</pacs:Cd>");
+        CreditTransfer back = TransferReader.pacs008((MxPacs00800108) AbstractMX.parse(raw));
+        assertThat(back.instructedAgentBic()).isEqualTo("MNPBDEFFXXX");
+        assertThat(back.clearing()).isEqualTo(new com.minipay.messaging.api.Clearing("MPINST", "HIGH", true, null));
+    }
+
+    @Test
+    void a_relayed_message_keeps_the_document_byte_for_byte_and_only_the_header_changes() {
+        CreditTransfer f = Fixtures.transfer();
+        CreditTransfer viaT2 = new CreditTransfer(f.uetr(), f.instructionId(), f.endToEndId(), "MNPCGB2LXXX", "MNPBDEFFXXX",
+                f.debtorAgentBic(), f.creditorAgentBic(), f.debtorName(), f.debtorAccount(), f.creditorName(),
+                f.creditorAccount(), f.interbankAmount(), f.instructedAmount(), List.of(), f.chargeBearer(),
+                f.settlementDate(), SettlementMethod.CLRG, null, List.of(), null,
+                new com.minipay.messaging.api.Clearing("T2", "NORM", false, "MNCBDEFFXXX"));
+        String raw = Mx.render(Pacs008Writer.build(viaT2, "MNPC20261124-008-000004", Fixtures.CREATED));
+        String relayed = Mx.readdressed(raw, "MNCBDEFFXXX", "MNPBDEFFXXX", com.minipay.messaging.api.MessageType.PACS_008,
+                Fixtures.CREATED.plusSeconds(2));
+        MxReader.Parsed p = MxReader.read(relayed, "MNPBDEFFXXX");
+        assertThat(p.errors()).isEmpty();
+        assertThat(p.from()).isEqualTo("MNCBDEFFXXX");
+        assertThat(p.msgId()).isEqualTo("MNPC20261124-008-000004");
+        assertThat(document(relayed)).isEqualTo(document(raw));
+        assertThat(TransferReader.pacs008((MxPacs00800108) AbstractMX.parse(relayed)).instructingAgentBic()).isEqualTo("MNPCGB2LXXX");
+    }
+
+    private static String document(String raw) {
+        return raw.substring(raw.indexOf("<Document") >= 0 ? raw.indexOf("<Document") : raw.indexOf(":Document"));
+    }
 }

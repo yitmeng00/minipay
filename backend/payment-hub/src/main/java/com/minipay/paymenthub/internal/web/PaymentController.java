@@ -56,7 +56,7 @@ class PaymentController {
                                        @Valid @RequestBody CreatePaymentRequest body) {
         Replayable<PaymentView> r = hub.create(new CreatePaymentCommand(requireKey(key), body.debtorAccount(),
                 body.creditorName(), body.creditorAccount(), body.creditorAgentBic(), body.amount(), body.chargeBearer(),
-                body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation()));
+                body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation(), body.serviceLevel()));
         return respond(r);
     }
 
@@ -107,7 +107,7 @@ class PaymentController {
     PaymentPreview preview(@Valid @RequestBody CreatePaymentRequest body) {
         return hub.preview(new CreatePaymentCommand("preview", body.debtorAccount(), body.creditorName(),
                 body.creditorAccount(), body.creditorAgentBic(), body.amount(), body.chargeBearer(),
-                body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation()));
+                body.requestedExecutionDate(), body.endToEndId(), body.remittanceInformation(), body.serviceLevel()));
     }
 
     record ReturnRequest(String reasonCode, String additionalInformation) {

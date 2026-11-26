@@ -160,6 +160,25 @@ public class MessagingService implements MessagingApi {
     }
 
     @Override
+    public MessageView relay(String businessKey, UUID messageId, String toBic) {
+        Optional<MessageView> existing = repo.findByBusinessKey(businessKey);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        MessageDetail original = get(messageId);
+        MessageView o = original.message();
+        String raw = Mx.readdressed(original.raw(), ownBic, Bic.parse(toBic).value(), o.type(), now());
+        MxReader.Parsed p = selfCheck(raw);
+        try {
+            return repo.insert(new NewMessage(MessageDirection.OUTBOUND, o.type(), p.msgId(), p.from(), p.to(), businessKey,
+                    o.uetr(), o.endToEndId(), o.instructionId(), o.originalMsgId(), o.account(), o.amount(),
+                    o.settlementDate(), o.status(), o.reasonCode(), List.of(), raw));
+        } catch (DuplicateKeyException e) {
+            return repo.findByBusinessKey(businessKey).orElseThrow(() -> e);
+        }
+    }
+
+    @Override
     public String renderPacs008(CreditTransfer t) {
         String msgId = bic4(t.instructingAgentBic()) + YYYYMMDD.format(today()) + "-008-PREVIEW";
         return Mx.render(Pacs008Writer.build(t, msgId, now()));

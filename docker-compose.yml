@@ -48,6 +48,17 @@ services:
     ports: ["5435:5432"]
     volumes: [bank-c-data:/var/lib/postgresql/data]
 
+  # The simulated euro-area central bank (M7, ADR-008): operates T2 (RTGS), MiniPay Net (DNS) and
+  # MiniPay Instant. Its books (the participants' accounts) are its own, like every bank's.
+  operator-db:
+    <<: *postgres
+    container_name: minipay-operator-db
+    environment:
+      <<: *pgenv
+      POSTGRES_DB: operator
+    ports: ["5436:5432"]
+    volumes: [operator-data:/var/lib/postgresql/data]
+
   kafka:
     image: apache/kafka:4.0.0
     container_name: minipay-kafka
@@ -69,3 +80,4 @@ volumes:
   bank-a-data:
   bank-b-data:
   bank-c-data:
+  operator-data:

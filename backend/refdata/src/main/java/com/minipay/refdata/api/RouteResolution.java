@@ -24,8 +24,21 @@ public record RouteResolution(
     /**
      * @param instructedAgentBic the bank that receives our pacs.008 (InstdAgt): the next hop for
      *                           SERIAL, otherwise the creditor agent itself
+     * @param system             the clearing system the payment goes through (RTGS, DNS, INSTANT), or null
      */
-    public record Route(RoutingRuleView rule, String instructedAgentBic) {
+    public record Route(RoutingRuleView rule, String instructedAgentBic, ClearingSystemView system) {
+
+        public Route(RoutingRuleView rule, String instructedAgentBic) {
+            this(rule, instructedAgentBic, null);
+        }
+
+        /**
+         * Who our message is addressed to (AppHdr/To): the clearing system's operator for a payment that goes
+         * through one, otherwise the instructed agent.
+         */
+        public String messageReceiverBic() {
+            return system != null ? system.operatorBic() : instructedAgentBic;
+        }
     }
 
     public record Candidate(RoutingRuleView rule, String note) {

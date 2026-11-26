@@ -16,6 +16,10 @@ import com.minipay.refdata.api.RouteResolution;
 import com.minipay.refdata.api.RoutingRuleImport;
 import com.minipay.refdata.api.RoutingRuleView;
 import com.minipay.refdata.api.SchemeView;
+import com.minipay.refdata.api.ClearingSystemView;
+import com.minipay.refdata.api.RoutingMethod;
+import java.util.EnumSet;
+import java.util.Set;
 import com.minipay.refdata.api.ValueDating;
 import com.minipay.refdata.internal.domain.BusinessCalendar;
 import com.minipay.refdata.internal.domain.IbanValidator;
@@ -150,8 +154,30 @@ public class RefDataService implements RefDataApi {
 
     @Override
     public RouteResolution route(String creditorAgentBic, String currency, LocalDate valueDate) {
-        return RouteSelector.select(repo.rules(currency), creditorAgentBic, currency, valueDate,
-                bic -> repo.findBic(bic, valueDate));
+        return route(creditorAgentBic, currency, valueDate, EnumSet.allOf(RoutingMethod.class));
+    }
+
+    @Override
+    public RouteResolution route(String creditorAgentBic, String currency, LocalDate valueDate, Set<RoutingMethod> allowed) {
+        return RouteSelector.select(repo.rules(currency), creditorAgentBic, currency, valueDate, allowed,
+                bic -> repo.findBic(bic, valueDate), kind -> clearingSystem(kind, currency, valueDate));
+    }
+
+    // ------------------------------------------------------------------ clearing systems
+
+    @Override
+    public Optional<ClearingSystemView> clearingSystem(RoutingMethod kind, String currency, LocalDate on) {
+        return repo.clearingSystems(on).stream().filter(s -> s.kind() == kind && s.currency().equals(currency)).findFirst();
+    }
+
+    @Override
+    public Optional<ClearingSystemView> clearingSystem(String code, LocalDate on) {
+        return repo.clearingSystems(on).stream().filter(s -> s.code().equals(code)).findFirst();
+    }
+
+    @Override
+    public List<ClearingSystemView> clearingSystems(LocalDate on) {
+        return repo.clearingSystems(on);
     }
 
     @Override

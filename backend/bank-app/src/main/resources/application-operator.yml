@@ -1,0 +1,49 @@
+# The simulated euro-area central bank (M7, ADR-008). Not a fourth commercial bank: it runs the
+# clearing and settlement systems the banks settle EUR through:
+#   T2 (sim)         real-time gross settlement, with a liquidity queue and a 17:00 cut-off
+#   MiniPay Net      deferred net settlement in cycles (09:00, 12:00, 15:00, 17:00), on the T2 accounts
+#   MiniPay Instant  instant payments on prefunded positions, answered within 10 s or rejected (AB05)
+# Its ledger holds the participants' accounts (liabilities of the central bank). Every balance here is
+# the mirror of the participant's own nostro: RTGS-MNPBDEFF = Bank B's 1001-EUR-T2, and so on.
+server:
+  port: 8084
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5436/operator
+
+minipay:
+  bank:
+    name: MiniPay Central Bank
+    bic: MNCBDEFFXXX
+    city: Frankfurt am Main
+    role: Central bank · T2, MiniPay Net, MiniPay Instant
+    time-zone: Europe/Berlin
+  settlement:
+    operator: true
+    # Bank A (Kuala Lumpur) is not a participant: it reaches the euro systems through Bank B. Bank C
+    # (London) takes part as if through a euro-area branch, as UK banks do since Brexit (same BIC here).
+    # Bank D (Brussels) and Bank E (Paris) are not run by MiniPay: the operator plays them.
+    participants:
+      - { bic: MNPBDEFFXXX, name: "Bank B · MiniPay Bank Deutschland AG", simulated: false }
+      - { bic: MNPCGB2LXXX, name: "Bank C · MiniPay Bank UK plc", simulated: false }
+      - { bic: MNPDBEBBXXX, name: "Bank D · MiniPay Banque Belgique SA", simulated: true }
+      - { bic: MNPEFRPPXXX, name: "Bank E · MiniPay Banque Paris SA", simulated: true }
+    # A participant the operator plays answers instant payments after this long.
+    simulated-answer-delay: PT1.2S
+  seed:
+    enabled: true
+    accounts:
+      # The counterpart of every participant's balance (in reality: the central bank's monetary policy
+      # assets: loans to banks against collateral, securities). A technical account here.
+      - { number: CB-EUR-ASSETS, type: SUSPENSE, currency: EUR, owner: "Central bank assets (counterpart of participants' balances)", allow-overdraft: true }
+      # T2 dedicated cash accounts (RTGS and the ACH's net settlement)
+      - { number: RTGS-MNPBDEFF, type: VOSTRO, currency: EUR, owner: "T2 · Bank B", counterparty-bic: MNPBDEFFXXX, opening-balance: 8669393.42, funded-from: CB-EUR-ASSETS }
+      - { number: RTGS-MNPCGB2L, type: VOSTRO, currency: EUR, owner: "T2 · Bank C", counterparty-bic: MNPCGB2LXXX, opening-balance: 2000000.00, funded-from: CB-EUR-ASSETS }
+      - { number: RTGS-MNPDBEBB, type: VOSTRO, currency: EUR, owner: "T2 · Bank D (simulated)", counterparty-bic: MNPDBEBBXXX, opening-balance: 25000000.00, funded-from: CB-EUR-ASSETS }
+      - { number: RTGS-MNPEFRPP, type: VOSTRO, currency: EUR, owner: "T2 · Bank E (simulated)", counterparty-bic: MNPEFRPPXXX, opening-balance: 30000000.00, funded-from: CB-EUR-ASSETS }
+      # Instant positions (TIPS-style dedicated cash accounts), prefunded
+      - { number: INST-MNPBDEFF, type: VOSTRO, currency: EUR, owner: "MiniPay Instant · Bank B", counterparty-bic: MNPBDEFFXXX, opening-balance: 1000000.00, funded-from: CB-EUR-ASSETS }
+      - { number: INST-MNPCGB2L, type: VOSTRO, currency: EUR, owner: "MiniPay Instant · Bank C", counterparty-bic: MNPCGB2LXXX, opening-balance: 500000.00, funded-from: CB-EUR-ASSETS }
+      - { number: INST-MNPDBEBB, type: VOSTRO, currency: EUR, owner: "MiniPay Instant · Bank D (simulated)", counterparty-bic: MNPDBEBBXXX, opening-balance: 2000000.00, funded-from: CB-EUR-ASSETS }
+      - { number: INST-MNPEFRPP, type: VOSTRO, currency: EUR, owner: "MiniPay Instant · Bank E (simulated)", counterparty-bic: MNPEFRPPXXX, opening-balance: 2000000.00, funded-from: CB-EUR-ASSETS }

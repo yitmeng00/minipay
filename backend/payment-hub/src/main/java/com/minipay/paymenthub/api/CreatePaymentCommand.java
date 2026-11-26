@@ -12,6 +12,7 @@ import java.util.Objects;
  * @param debtorAccount           our customer's account number
  * @param requestedExecutionDate  null = today's business date; a future date warehouses the payment
  * @param endToEndId              the debtor's own reference; null = "NOTPROVIDED"
+ * @param serviceLevel            normal, urgent or instant (ADR-008); null = NORM
  */
 public record CreatePaymentCommand(
         String idempotencyKey,
@@ -23,9 +24,18 @@ public record CreatePaymentCommand(
         ChargeBearer chargeBearer,
         LocalDate requestedExecutionDate,
         String endToEndId,
-        String remittanceInformation) {
+        String remittanceInformation,
+        ServiceLevel serviceLevel) {
+
+    public CreatePaymentCommand(String idempotencyKey, String debtorAccount, String creditorName, String creditorAccount,
+                                String creditorAgentBic, Money amount, ChargeBearer chargeBearer,
+                                LocalDate requestedExecutionDate, String endToEndId, String remittanceInformation) {
+        this(idempotencyKey, debtorAccount, creditorName, creditorAccount, creditorAgentBic, amount, chargeBearer,
+                requestedExecutionDate, endToEndId, remittanceInformation, ServiceLevel.NORM);
+    }
 
     public CreatePaymentCommand {
+        serviceLevel = serviceLevel == null ? ServiceLevel.NORM : serviceLevel;
         Objects.requireNonNull(idempotencyKey, "idempotencyKey");
         Objects.requireNonNull(debtorAccount, "debtorAccount");
         Objects.requireNonNull(amount, "amount");

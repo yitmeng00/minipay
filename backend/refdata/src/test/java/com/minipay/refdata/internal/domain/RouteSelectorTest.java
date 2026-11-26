@@ -110,4 +110,50 @@ class RouteSelectorTest {
         List<RoutingRuleView> rules = List.of(rule("R-030", "*", RoutingMethod.SERIAL, "MNPSSGSGXXX", 10, "2024-01-01", null));
         assertThat(route(rules, "MNPEFRPPXXX", "2026-11-25").problem()).contains("MNPSSGSGXXX is PENDING_RMA");
     }
+
+    // ------------------------------------------------------------------ clearing systems (M7, ADR-008)
+
+    static final com.minipay.refdata.api.ClearingSystemView INSTANT = new com.minipay.refdata.api.ClearingSystemView(
+            "MPINST", "MiniPay Instant", RoutingMethod.INSTANT, "EUR", "MNPBDEFFXXX", null, "Europe/Berlin", null,
+            List.of(), 10, D2024, null, "v1");
+
+    static final List<RoutingRuleView> CLEARING = List.of(
+            rule("R-001", "MNPDBEBB*", RoutingMethod.DIRECT, null, 10, "2024-01-01", null),
+            rule("R-002", "*", RoutingMethod.RTGS, null, 50, "2024-01-01", null),
+            rule("R-003", "*", RoutingMethod.DNS, null, 40, "2024-01-01", null),
+            rule("R-004", "*", RoutingMethod.INSTANT, null, 30, "2024-01-01", null));
+
+    static RouteResolution route(String bic, java.util.Set<RoutingMethod> allowed) {
+        return RouteSelector.select(CLEARING, bic, "EUR", LocalDate.parse("2026-11-25"), allowed, RouteSelectorTest::lookup,
+                kind -> kind == RoutingMethod.INSTANT ? Optional.of(INSTANT) : Optional.empty());
+    }
+
+    @Test
+    void an_instant_payment_only_considers_instant_rules_and_goes_to_the_systems_operator() {
+        RouteResolution r = route("MNPXNL2AXXX", java.util.EnumSet.of(RoutingMethod.INSTANT));
+        assertThat(r.considered()).extracting(c -> c.rule().ruleId()).containsExactly("R-004");
+        // The creditor agent is not on the network at all: through a system, only the operator must be reachable.
+        assertThat(r.route()).get().satisfies(x -> {
+            assertThat(x.instructedAgentBic()).isEqualTo("MNPXNL2AXXX");
+            assertThat(x.messageReceiverBic()).isEqualTo("MNPBDEFFXXX");
+            assertThat(x.system().code()).isEqualTo("MPINST");
+        });
+    }
+
+    @Test
+    void a_dns_rule_without_a_dns_system_is_unusable_and_not_skipped() {
+        RouteResolution r = route("MNPEFRPPXXX", java.util.EnumSet.of(RoutingMethod.RTGS, RoutingMethod.DNS));
+        assertThat(r.route()).isEmpty();
+        assertThat(r.problem()).contains("R-003").contains("no DNS system for EUR");
+    }
+
+    @Test
+    void an_rtgs_that_is_not_simulated_still_goes_straight_to_the_creditor_agent() {
+        RouteResolution r = route("MNPEFRPPXXX", java.util.EnumSet.of(RoutingMethod.RTGS));
+        assertThat(r.route()).get().satisfies(x -> {
+            assertThat(x.rule().ruleId()).isEqualTo("R-002");
+            assertThat(x.system()).isNull();
+            assertThat(x.messageReceiverBic()).isEqualTo("MNPEFRPPXXX");
+        });
+    }
 }

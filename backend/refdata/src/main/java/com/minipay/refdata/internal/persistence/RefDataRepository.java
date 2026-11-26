@@ -9,6 +9,7 @@ import com.minipay.refdata.api.ReleaseView;
 import com.minipay.refdata.api.RoutingMethod;
 import com.minipay.refdata.api.RoutingRuleView;
 import com.minipay.refdata.api.SchemeView;
+import com.minipay.refdata.api.ClearingSystemView;
 import com.minipay.refdata.internal.domain.IbanFormat;
 import java.sql.Array;
 import java.sql.Date;
@@ -122,6 +123,30 @@ public class RefDataRepository {
     private static SchemeView scheme(ResultSet rs) throws SQLException {
         return new SchemeView(rs.getString("currency"), rs.getString("scheme_name"), rs.getString("calendar_code"),
                 rs.getString("time_zone"), rs.getObject("cutoff_time", LocalTime.class),
+                rs.getObject("valid_from", LocalDate.class), lastDay(rs), rs.getString("release_version"));
+    }
+
+    // ------------------------------------------------------------------ clearing systems
+
+    private static final String SYSTEM_COLUMNS = """
+            code, name, kind, currency, operator_bic, settles_in, time_zone, cutoff_time, cycle_times::text AS cycles,
+            timeout_seconds, lower(valid) AS valid_from, upper(valid) AS valid_upper, release_version
+            """;
+
+    public List<ClearingSystemView> clearingSystems(LocalDate on) {
+        return jdbc.sql("SELECT " + SYSTEM_COLUMNS + " FROM refdata.clearing_system WHERE valid @> :on ORDER BY currency, kind")
+                .param("on", on).query((rs, n) -> clearingSystem(rs)).list();
+    }
+
+    private static ClearingSystemView clearingSystem(ResultSet rs) throws SQLException {
+        String cycles = rs.getString("cycles");
+        List<LocalTime> times = cycles == null ? List.of() : java.util.Arrays.stream(cycles.replaceAll("[{}\\s\"]", "").split(","))
+                .filter(t -> !t.isEmpty()).map(LocalTime::parse).toList();
+        Number timeout = (Number) rs.getObject("timeout_seconds");
+        return new ClearingSystemView(rs.getString("code"), rs.getString("name"),
+                com.minipay.refdata.api.RoutingMethod.valueOf(rs.getString("kind")), rs.getString("currency"),
+                rs.getString("operator_bic"), rs.getString("settles_in"), rs.getString("time_zone"),
+                rs.getObject("cutoff_time", LocalTime.class), times, timeout == null ? null : timeout.intValue(),
                 rs.getObject("valid_from", LocalDate.class), lastDay(rs), rs.getString("release_version"));
     }
 

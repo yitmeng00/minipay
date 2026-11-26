@@ -1,5 +1,9 @@
 package com.minipay.messaging.internal.mx;
 
+import com.prowidesoftware.swift.model.mx.dic.ClearingSystemIdentification3Choice;
+import com.prowidesoftware.swift.model.mx.dic.LocalInstrument2Choice;
+import com.prowidesoftware.swift.model.mx.dic.PaymentTypeInformation28;
+import com.prowidesoftware.swift.model.mx.dic.Priority2Code;
 import com.minipay.messaging.api.CreditTransfer;
 import com.minipay.messaging.api.MessageType;
 import com.prowidesoftware.swift.model.mx.MxPacs00800108;
@@ -20,19 +24,25 @@ import java.util.List;
  * pacs.008.001.08, one transaction per message (CBPR+ allows no batches).
  *
  * <pre>
- *   GrpHdr        MsgId, CreDtTm, NbOfTxs = 1, SttlmInf/SttlmMtd (INDA, INGA, COVE, CLRG)
- *   CdtTrfTxInf   PmtId (InstrId, EndToEndId, UETR), IntrBkSttlmAmt + Dt, InstdAmt, ChrgBr,
+ *   GrpHdr        MsgId, CreDtTm, NbOfTxs = 1, SttlmInf/SttlmMtd (INDA, INGA, COVE, CLRG), SttlmInf/ClrSys/Prtry
+ *   CdtTrfTxInf   PmtId (InstrId, EndToEndId, UETR), PmtTpInf (InstrPrty, LclInstrm INST), IntrBkSttlmAmt + Dt, InstdAmt, ChrgBr,
  *                 ChrgsInf (each bank's charges), PrvsInstgAgt1..3, InstgAgt, InstdAgt, Dbtr, DbtrAcct, DbtrAgt,
  *                 CdtrAgt, Cdtr, CdtrAcct, RmtInf/Ustrd
  * </pre>
  */
 public final class Pacs008Writer {
+    // Through a clearing system the AppHdr is addressed to the system's operator, the creditor's bank stays
+    // InstdAgt (V-shape: the operator settles, then forwards the Document unchanged).
 
     private Pacs008Writer() {
     }
 
     public static MxPacs00800108 build(CreditTransfer t, String msgId, OffsetDateTime created) {
         SettlementInstruction7 sttlm = new SettlementInstruction7().setSttlmMtd(SettlementMethod1Code.valueOf(t.settlementMethod().name()));
+        if (t.clearing() != null && t.clearing().system() != null) {
+            // Through a clearing system: which one (ADR-008). The system's operator settles it.
+            sttlm.setClrSys(new ClearingSystemIdentification3Choice().setPrtry(t.clearing().system()));
+        }
         if (t.coverAgentBic() != null) {
             // Cover method: the money travels separately, through this bank (InstgRmbrsmntAgt).
             sttlm.setInstgRmbrsmntAgt(Mx.agent(t.coverAgentBic()));
@@ -59,6 +69,16 @@ public final class Pacs008Writer {
                 .setCdtrAgt(Mx.agent(t.creditorAgentBic()))
                 .setCdtr(new PartyIdentification135().setNm(t.creditorName()))
                 .setCdtrAcct(Mx.account(t.creditorAccount()));
+        if (t.clearing() != null && (t.clearing().priority() != null || t.clearing().instant())) {
+            PaymentTypeInformation28 type = new PaymentTypeInformation28();
+            if (t.clearing().priority() != null) {
+                type.setInstrPrty(Priority2Code.valueOf(t.clearing().priority())); // HIGH = urgent: settled first
+            }
+            if (t.clearing().instant()) {
+                type.setLclInstrm(new LocalInstrument2Choice().setCd("INST"));
+            }
+            tx.setPmtTpInf(type);
+        }
         if (t.instructedAmount() != null) {
             tx.setInstdAmt(Mx.amount(t.instructedAmount()));
         }
@@ -82,7 +102,7 @@ public final class Pacs008Writer {
         }
 
         MxPacs00800108 mx = new MxPacs00800108();
-        mx.setAppHdr(Mx.header(t.instructingAgentBic(), t.instructedAgentBic(), msgId, MessageType.PACS_008, created));
+        mx.setAppHdr(Mx.header(t.instructingAgentBic(), t.messageReceiverBic(), msgId, MessageType.PACS_008, created));
         mx.setFIToFICstmrCdtTrf(new FIToFICustomerCreditTransferV08().setGrpHdr(grpHdr).addCdtTrfTxInf(tx));
         return mx;
     }

@@ -140,8 +140,13 @@ public class PaymentService implements PaymentHubApi {
         String creditorAccount = c.creditorAccount() == null ? null
                 : c.creditorAccount().replace(" ", "").toUpperCase(Locale.ROOT);
         String creditorAgentBic = c.creditorAgentBic() == null ? null : c.creditorAgentBic().trim().toUpperCase(Locale.ROOT);
-        String hash = fingerprint("create", c.debtorAccount(), c.creditorName(), creditorAccount, creditorAgentBic,
-                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation());
+        // NORM is left out of the fingerprint, so keys stored before service levels existed still replay.
+        String hash = c.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.NORM
+                ? fingerprint("create", c.debtorAccount(), c.creditorName(), creditorAccount, creditorAgentBic,
+                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation())
+                : fingerprint("create", c.debtorAccount(), c.creditorName(), creditorAccount, creditorAgentBic,
+                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation(),
+                c.serviceLevel());
 
         Optional<Replayable<PaymentView>> replay = replay(c.idempotencyKey(), hash);
         if (replay.isPresent()) {
@@ -159,8 +164,11 @@ public class PaymentService implements PaymentHubApi {
                         c.remittanceInformation(),
                         c.requestedExecutionDate() != null ? c.requestedExecutionDate() : processor.businessDate(),
                         clock.instant());
+                p.serviceLevel(c.serviceLevel());
                 payments.saveAndFlush(p);
-                transitions.recordReceived(p, "Accepted from channel REST API", "api/payments");
+                transitions.recordReceived(p, "Accepted from channel REST API"
+                        + (c.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.NORM ? "" : " (" + c.serviceLevel() + ")"),
+                        "api/payments");
                 idempotency.saveAndFlush(new IdempotencyRecord(c.idempotencyKey(), hash, "create", p.id(), clock.instant()));
                 return p.id();
             });
@@ -298,6 +306,18 @@ public class PaymentService implements PaymentHubApi {
     private Payment fromPacs008(MessageView m) {
         CreditTransfer t = messaging.creditTransfer(m.id());
         Money instructed = t.instructedAmount() != null ? t.instructedAmount() : t.interbankAmount();
+        Payment p = receiveIncoming(m, t, instructed);
+        // Forwarded by a clearing system (ADR-008): its operator sent it to us (AppHdr/Fr), the payer bank stays InstgAgt.
+        if (t.clearing() != null && t.clearing().system() != null && !IncomingProcessor.sameBank(m.senderBic(), t.instructingAgentBic())) {
+            p.throughSystem(t.clearing().system(), Bic.parse(m.senderBic()).value());
+            p.serviceLevel(t.clearing().instant() ? com.minipay.paymenthub.api.ServiceLevel.INST
+                    : "HIGH".equals(t.clearing().priority()) ? com.minipay.paymenthub.api.ServiceLevel.HIGH
+                    : com.minipay.paymenthub.api.ServiceLevel.NORM);
+        }
+        return p;
+    }
+
+    private Payment receiveIncoming(MessageView m, CreditTransfer t, Money instructed) {
         return Payment.receiveIncoming(PaymentKind.CUSTOMER, UUID.fromString(t.uetr()), t.endToEndId(), t.instructionId(),
                 instructed.amount(), t.interbankAmount().amount(), t.interbankAmount().currencyCode(), t.chargeBearer(),
                 t.debtorName(), t.debtorAccount(), t.debtorAgentBic(), t.creditorName(), t.creditorAccount(),
@@ -336,7 +356,8 @@ public class PaymentService implements PaymentHubApi {
         Payment p = find(in.originalUetr());
         boolean fromNextBank = p.instructedAgentBic() != null && IncomingProcessor.sameBank(m.senderBic(), p.instructedAgentBic());
         boolean fromCoverAgent = IncomingProcessor.sameBank(m.senderBic(), p.coverAgentBic());
-        if (!fromNextBank && !fromCoverAgent) {
+        boolean fromSystem = IncomingProcessor.sameBank(m.senderBic(), p.viaBic());
+        if (!fromNextBank && !fromCoverAgent && !fromSystem) {
             throw new PaymentException(PaymentError.INVALID_NETWORK_EVENT, m.type().identifier() + " from " + m.senderBic()
                     + ", but payment " + p.uetr() + " was sent to " + p.instructedAgentBic());
         }
@@ -353,6 +374,13 @@ public class PaymentService implements PaymentHubApi {
         // payment backwards. It is stored, and acknowledged, and nothing else happens.
         if (in.duplicate() || alreadyPast(p.status(), target)) {
             return new Replayable<>(PaymentMapper.toView(p), true);
+        }
+        // An instant payment to us: the scheme's ACSC lets us credit the customer; its RJCT (a timeout) ends it.
+        if (p.direction() == PaymentDirection.INCOMING && fromSystem && m.type() == MessageType.PACS_002
+                && p.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.INST) {
+            String ref = "pacs.002 " + m.msgId() + " " + in.status() + " from " + m.senderBic();
+            incoming.instantOutcome(p, event.type() == NetworkEvent.Type.SETTLED, event.reasonCode(), event.reference(), ref);
+            return new Replayable<>(PaymentMapper.toView(payments.findById(p.id()).orElseThrow()), false);
         }
         String ref = m.type().identifier().substring(0, 8) + " " + m.msgId()
                 + (m.type() == MessageType.PACS_002 ? " " + in.status() : "") + note;
@@ -401,7 +429,8 @@ public class PaymentService implements PaymentHubApi {
                     upstream = incoming.status(p, TransactionStatus.ACSC, null, null,
                             messaging.inspect(messaging.get(inbound.id()).raw()).charges());
                 }
-                detail = "Credited by the creditor's bank · " + ref
+                detail = (IncomingProcessor.sameBank(inbound.senderBic(), p.viaBic())
+                        ? "Settled by " + p.clearingSystem() + " (final)" : "Credited by the creditor's bank") + " · " + ref
                         + (upstream != null ? " · ACSC " + upstream.msgId() + " → " + p.instructingAgentBic() : "");
             }
             case REJECTED -> {
@@ -539,8 +568,10 @@ public class PaymentService implements PaymentHubApi {
             charges.add(new Charge(Money.of(p.chargesAmount(), p.currency()), bankBic));
         }
         String original = messaging.get(p.inboundMessageId()).message().msgId();
+        // Received through a clearing system, the money goes back through it too (ADR-008).
+        String returnTo = p.viaBic() != null ? p.viaBic() : Bic.parse(p.instructingAgentBic()).value();
         MessageView pacs004 = messaging.issuePacs004("pacs.004:" + p.id(), new PaymentReturn(bankBic,
-                Bic.parse(p.instructingAgentBic()).value(), "RTN-" + p.instructionId(), original, p.instructionId(),
+                returnTo, "RTN-" + p.instructionId(), original, p.instructionId(),
                 p.endToEndId(), p.uetr().toString(), Money.of(p.interbankSettlementAmount(), p.currency()), credited,
                 processor.businessDate(), charges, reasonCode, additionalInfo));
         tx.executeWithoutResult(s -> {
@@ -576,7 +607,8 @@ public class PaymentService implements PaymentHubApi {
         String creditorAccount = c.creditorAccount() == null ? "" : c.creditorAccount().replace(" ", "").toUpperCase(Locale.ROOT);
         String agent = c.creditorAgentBic() == null ? "" : c.creditorAgentBic().trim().toUpperCase(Locale.ROOT);
         PaymentProcessor.Preview pv = processor.preview(c.debtorAccount(), null, c.creditorName(), creditorAccount, agent,
-                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation());
+                c.amount(), c.chargeBearer(), c.requestedExecutionDate(), c.endToEndId(), c.remittanceInformation(),
+                c.serviceLevel());
         return new PaymentPreview(pv.xml(), pv.notes());
     }
 

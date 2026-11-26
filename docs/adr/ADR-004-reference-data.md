@@ -4,6 +4,9 @@
 - **Date:** 2026-11-25
 - **Milestone:** M3
 - **Amends:** ADR-003 §5 (validation), §7 (interim routing), §8 (warehousing)
+- **Amended by:** ADR-008 (M7): clearing systems (T2, MiniPay Net, MiniPay Instant) as effective-dated reference
+  data; routing methods DNS and INSTANT; RTGS routes go through the currency's RTGS when it is simulated; routing
+  restricted by the payment's service level; instant payments execute today, any day and hour
 
 ## Context
 

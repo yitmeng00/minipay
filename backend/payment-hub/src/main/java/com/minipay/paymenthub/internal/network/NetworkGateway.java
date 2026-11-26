@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * console can play that bank (the network simulation endpoint).
  */
 @Component
-public class NetworkGateway {
+public class NetworkGateway implements com.minipay.paymenthub.api.NetworkOutbox {
 
     public static final String EVENT_TYPE = "network.message";
     public static final String EXTERNAL_TOPIC = "minipay.network.external";
@@ -52,6 +52,7 @@ public class NetworkGateway {
     }
 
     /** Is this bank one of the simulated banks, with an inbox on the network? */
+    @Override
     public boolean isParticipant(String bic) {
         return bic != null && Bic.isValid(bic) && participants.contains(Bic.parse(bic).bic8());
     }
@@ -62,9 +63,14 @@ public class NetworkGateway {
 
     /** Puts a stored message on the network. Must run inside the transaction of the status change. */
     public void deliver(UUID paymentId, MessageView m) {
+        deliver("payment", paymentId, m);
+    }
+
+    @Override
+    public void deliver(String aggregateType, UUID aggregateId, MessageView m) {
         String raw = messaging.get(m.id()).raw();
         String topic = isParticipant(m.receiverBic()) ? inboxTopic(m.receiverBic()) : EXTERNAL_TOPIC;
-        outbox.append(UUID.randomUUID(), "payment", paymentId, EVENT_TYPE, topic,
+        outbox.append(UUID.randomUUID(), aggregateType, aggregateId, EVENT_TYPE, topic,
                 m.uetr() != null ? m.uetr() : m.msgId(),
                 new Envelope(m.id(), m.msgId(), m.type().identifier(), m.senderBic(), m.receiverBic(), m.uetr(), raw));
     }

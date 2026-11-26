@@ -137,7 +137,13 @@ export type Payment = {
   reservationId: string | null
   createdAt: string
   updatedAt: string
+  serviceLevel: ServiceLevel
+  clearingSystem: string | null
+  viaBic: string | null
 }
+
+/** NORM normal · HIGH urgent (never through the ACH) · INST instant (only through the instant scheme). */
+export type ServiceLevel = 'NORM' | 'HIGH' | 'INST'
 
 export type StateChange = {
   id: number
@@ -483,3 +489,112 @@ export type Screening = {
 }
 
 export type PaymentCompliance = { screening: Screening; caseView: ComplianceCase | null }
+
+// ---------------------------------------------------------------- settlement systems (M7, served by the operator)
+
+export type TransferStatus = 'QUEUED' | 'ACCEPTED' | 'PENDING' | 'SETTLED' | 'REJECTED'
+
+export type Transfer = {
+  id: string
+  system: string
+  kind: 'RTGS' | 'DNS' | 'INSTANT'
+  messageType: string
+  messageId: string
+  msgId: string
+  uetr: string
+  endToEndId: string | null
+  instructionId: string | null
+  payerBic: string
+  payeeBic: string
+  amount: Money
+  priority: 'HIGH' | 'NORM'
+  settlementDate: string
+  status: TransferStatus
+  queueSeq: number
+  cycleId: string | null
+  deadline: string | null
+  reasonCode: string | null
+  reasonDetail: string | null
+  receivedAt: string
+  settledAt: string | null
+  waiting: string | null
+}
+
+export type ClearingParticipant = {
+  bic: string
+  name: string
+  simulated: boolean
+  rtgsAccount: string
+  instantAccount: string
+  rtgsBalance: Money
+  instantAvailable: Money
+  instantReserved: Money
+}
+
+export type RtgsView = {
+  system: string
+  systemName: string
+  participantBic: string
+  participantName: string
+  businessDate: string
+  timeZone: string
+  cutoff: string
+  cutoffAt: string
+  available: Money
+  queuedOut: Money
+  queuedOutCount: number
+  queuedIn: Money
+  queuedInCount: number
+  projected: Money
+  intraday: { at: string; balance: Money }[]
+  queue: Transfer[]
+  recent: Transfer[]
+}
+
+export type DnsCycle = {
+  id: string
+  system: string
+  systemName: string
+  businessDate: string
+  seq: number
+  status: 'OPEN' | 'SETTLED'
+  scheduledClose: string
+  settledAt: string | null
+  payments: number
+  rejected: number
+  participants: string[]
+  gross: { payerBic: string; cells: Money[] }[]
+  positions: { bic: string; name: string; pays: Money; receives: Money; net: Money }[]
+  grossTotal: Money
+  bilateralTotal: Money
+  multilateralTotal: Money
+  unwound: string[]
+}
+
+export type InstantView = {
+  system: string
+  systemName: string
+  timeoutSeconds: number
+  participantBic: string
+  available: Money
+  reserved: Money
+  today: number
+  accepted: number
+  rejected: number
+  timedOut: number
+  medianMillis: number | null
+  p99Millis: number | null
+  feed: Transfer[]
+}
+
+export type ClearingSystem = {
+  code: string
+  name: string
+  kind: 'RTGS' | 'DNS' | 'INSTANT'
+  currency: string
+  operatorBic: string
+  timeZone: string
+  cutoff: string | null
+  cycleTimes: string[]
+  timeoutSeconds: number | null
+}

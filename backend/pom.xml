@@ -72,6 +72,16 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.minipay</groupId>
+                <artifactId>payment-hub</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.minipay</groupId>
+                <artifactId>settlement</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.prowidesoftware</groupId>
                 <artifactId>pw-iso20022</artifactId>
                 <version>${prowide.iso20022.version}</version>

@@ -236,6 +236,17 @@ public class IncomingProcessor {
                     new Change(PaymentStatus.AWAITING_COVER, null, r.detail("Holding the payment until the cover arrives via "
                             + p.coverAgentBic() + " (camt.054)"), r.actor("svc/gateway")));
         }
+        if (instant(p)) {
+            // Instant (ADR-008): we accept it to the scheme and credit our customer only once the scheme confirms
+            // that it settled. Our answer must reach the scheme within its timeout, or it rejects the payment (AB05).
+            MessageView accp = status(p, TransactionStatus.ACCP, null, null);
+            return transitions.transition(p.id(), r.from(), payment -> {
+                network.deliver(p.id(), accp);
+                return new Change(PaymentStatus.ACKED, null, r.detail("Instant: accepted to " + p.clearingSystem()
+                        + " (pacs.002 ACCP " + accp.msgId() + " → " + p.viaBic() + "); we credit when it confirms settlement"),
+                        r.actor("svc/gateway"));
+            });
+        }
         return credit(p, r, inboundAccount(p).orElseThrow(), Money.of(p.interbankSettlementAmount(), p.currency()),
                 "Received " + p.settlementMethod() + " from " + p.instructingAgentBic());
     }
@@ -261,8 +272,37 @@ public class IncomingProcessor {
                 "Cover received from " + p.coverAgentBic() + " (camt.054 " + notice.get().msgId() + ")");
     }
 
+    /**
+     * The instant scheme's verdict on a payment we accepted: settled (ACSC), so we credit our customer now; or
+     * rejected (RJCT, e.g. AB05 because our answer came too late, or we never gave one while the payment was held
+     * for compliance), so it ends here with nothing booked.
+     */
+    public boolean instantOutcome(Payment p, boolean settled, String reason, String info, String ref) {
+        if (settled) {
+            if (p.status() != PaymentStatus.ACKED) {
+                return false;
+            }
+            return credit(p, new Resume(PaymentStatus.ACKED, "", null), inboundAccount(p).orElseThrow(),
+                    Money.of(p.interbankSettlementAmount(), p.currency()), "Settled by " + p.clearingSystem() + " · " + ref, false);
+        }
+        if (p.status().isFinal() || p.status() == PaymentStatus.SETTLED) {
+            return false;
+        }
+        String code = reason != null ? reason : "NARR";
+        return transitions.transition(p.id(), p.status(), payment -> {
+            payment.reject(code, info != null ? info : "Rejected by " + p.clearingSystem());
+            return new Change(PaymentStatus.REJECTED, code, "Rejected by " + p.clearingSystem() + " · " + ref
+                    + (info != null ? " · " + info : "") + "; nothing was booked", "net/" + p.viaBic());
+        });
+    }
+
     /** Creditor's bank: book the money in, net of our charge, to our customer; tell the sender. */
     private boolean credit(Payment p, Resume r, AccountView inbound, Money received, String how) {
+        return credit(p, r, inbound, received, how, true);
+    }
+
+    /** @param confirm send the sender an ACSC (not for instant: the scheme already told both sides) */
+    private boolean credit(Payment p, Resume r, AccountView inbound, Money received, String how, boolean confirm) {
         PaymentStatus from = r.from();
         AccountView creditor = ledger.findAccountByNumber(p.creditorAccount()).orElseThrow();
         Money fee = ourCharge(p, received);
@@ -277,20 +317,23 @@ public class IncomingProcessor {
             return reject(p, from, iso(e), e.getMessage());
         }
         // The confirmation states our deduction, so every bank on the route sees what the creditor received.
-        MessageView acsc = status(p, TransactionStatus.ACSC, null, null,
+        MessageView acsc = !confirm ? null : status(p, TransactionStatus.ACSC, null, null,
                 fee.isPositive() ? List.of(new Charge(fee, ownBic)) : List.of());
         String detail = r.detail(how) + "; credited " + received.minus(fee) + " to " + p.creditorAccount()
-                + (fee.isPositive() ? " (our charge " + fee + ")" : "") + " · pacs.002 ACSC " + acsc.msgId() + " → " + p.instructingAgentBic();
+                + (fee.isPositive() ? " (our charge " + fee + ")" : "")
+                + (acsc != null ? " · pacs.002 ACSC " + acsc.msgId() + " → " + acsc.receiverBic() : "");
         return transitions.transition(p.id(), from, payment -> {
             payment.credited(inbound.id(), fee.amount(), p.executionDate());
-            network.deliver(p.id(), acsc);
+            if (acsc != null) {
+                network.deliver(p.id(), acsc);
+            }
             return new Change(PaymentStatus.SETTLED, null, detail, r.actor("svc/gateway"));
         });
     }
 
     /** Intermediary: book it through, deduct our charge, pass it on, tell the sender we accepted it. */
     private boolean forward(Payment p, Resume rs) {
-        Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), p.executionDate());
+        Router.Outcome outcome = router.route(p.creditorAgentBic(), p.currency(), p.executionDate(), p.serviceLevel());
         if (outcome.route().isEmpty()) {
             return reject(p, rs.from(), "CNOR", "No route: " + outcome.problem());
         }
@@ -325,16 +368,21 @@ public class IncomingProcessor {
         CreditTransfer onwardTransfer = new CreditTransfer(in.uetr(), ourInstrId, in.endToEndId(), ownBic,
                 r.instructedAgentBic(), in.debtorAgentBic(), in.creditorAgentBic(), in.debtorName(), in.debtorAccount(),
                 in.creditorName(), in.creditorAccount(), onward, in.instructedAmount(), charges, in.chargeBearer(),
-                p.executionDate(), r.settlementMethod(), null, previous, in.remittanceInformation());
+                p.executionDate(), r.settlementMethod(), null, previous, in.remittanceInformation(),
+                PaymentProcessor.clearing(r, p.serviceLevel()));
         MessageView pacs008 = messaging.issuePacs008("pacs.008:fwd:" + p.id(), onwardTransfer);
         MessageView acsp = status(p, TransactionStatus.ACSP, null, null);
-        String detail = rs.note() + "Forwarded pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic() + " · booked "
+        String detail = rs.note() + "Forwarded pacs.008 " + pacs008.msgId() + " → " + r.instructedAgentBic()
+                + (r.system() != null ? " through " + r.system().name() : "") + " · booked "
                 + inbound.accountNumber() + " → " + r.settlementAccountNumber() + ", onward " + onward
                 + (fee.isPositive() ? " (our charge " + fee + ")" : "") + "; routed by " + r.describe()
                 + " · pacs.002 ACSP " + acsp.msgId() + " → " + p.instructingAgentBic();
         return transitions.transition(p.id(), rs.from(), payment -> {
             payment.forwarded(inbound.id(), fee.amount(), r.instructedAgentBic(), r.settlementAccountId(),
                     p.executionDate(), r.ruleId(), pacs008.instructionId(), p.settlementMethod());
+            if (r.system() != null) {
+                payment.throughSystem(r.system().code(), r.system().operatorBic()); // its answers come from the operator
+            }
             network.deliver(p.id(), pacs008);
             network.deliver(p.id(), acsp);
             return new Change(PaymentStatus.SENT, null, detail, rs.actor("svc/gateway"));
@@ -380,13 +428,46 @@ public class IncomingProcessor {
     /** @param told what the RJCT's AddtlInf says (may be less than {@code detail}, which stays with us) */
     private boolean reject(Payment p, PaymentStatus from, String code, String detail, String told, String actor) {
         log.info("Incoming payment {} rejected {}: {}", p.uetr(), code, detail);
+        if (settledBeforeDelivery(p)) {
+            return returnThroughSystem(p, from, code, detail, told, actor);
+        }
         MessageView rjct = status(p, TransactionStatus.RJCT, code, told);
         return transitions.transition(p.id(), from, payment -> {
             payment.reject(code, detail);
             network.deliver(p.id(), rjct);
             return new Change(PaymentStatus.REJECTED, code, detail + " · pacs.002 RJCT " + rjct.msgId() + " → "
-                    + p.instructingAgentBic(), actor);
+                    + rjct.receiverBic(), actor);
         });
+    }
+
+    /**
+     * Through an RTGS or an ACH, a payment reaches us only after it settled: it is final, and the money is already
+     * on our central bank account. We cannot reject it; we can only send the money back, as a return (pacs.004)
+     * through the same system (ADR-008). We booked nothing, and the system moves the money back: our books and
+     * the central bank's stay in step.
+     */
+    private boolean returnThroughSystem(Payment p, PaymentStatus from, String code, String detail, String told, String actor) {
+        String original = messaging.get(p.inboundMessageId()).message().msgId();
+        Money amount = Money.of(p.interbankSettlementAmount(), p.currency());
+        MessageView pacs004 = messaging.issuePacs004("pacs.004:" + p.id(), new com.minipay.messaging.api.PaymentReturn(ownBic,
+                p.viaBic(), "RTN-" + p.instructionId(), original, p.instructionId(), p.endToEndId(), p.uetr().toString(),
+                amount, amount, LocalDate.now(clock.withZone(bankZone)), List.of(), code, told));
+        return transitions.transition(p.id(), from, payment -> {
+            payment.reject(code, detail);
+            network.deliver(p.id(), pacs004);
+            return new Change(PaymentStatus.REJECTED, code, detail + " · it settled before it reached us ("
+                    + p.clearingSystem() + "), so it goes back as a return: pacs.004 " + pacs004.msgId() + " → " + p.viaBic(), actor);
+        });
+    }
+
+    /** Arrived through an RTGS or ACH (not instant): settled, and final, before it was delivered to us. */
+    private boolean settledBeforeDelivery(Payment p) {
+        return p.viaBic() != null && p.serviceLevel() != com.minipay.paymenthub.api.ServiceLevel.INST
+                && p.kind() == PaymentKind.CUSTOMER;
+    }
+
+    private static boolean instant(Payment p) {
+        return p.viaBic() != null && p.serviceLevel() == com.minipay.paymenthub.api.ServiceLevel.INST;
     }
 
     /** A pacs.002 about this payment to the bank that sent it to us (one per status, so a re-run replays it). */
@@ -397,8 +478,10 @@ public class IncomingProcessor {
     /** @param charges for an ACSC: the deductions made by the creditor's bank (us, or the bank after us) */
     public MessageView status(Payment p, TransactionStatus status, String reason, String info, List<Charge> charges) {
         String original = messaging.get(p.inboundMessageId()).message().msgId();
+        // An instant payment's answers go to the scheme, which decides; everything else back to the sender.
+        String to = instant(p) ? p.viaBic() : Bic.parse(p.instructingAgentBic()).value();
         return messaging.issuePacs002("pacs.002:" + status.name().toLowerCase() + ":" + p.id(), new StatusReport(ownBic,
-                Bic.parse(p.instructingAgentBic()).value(), original, p.instructionId(), p.endToEndId(), p.uetr().toString(),
+                to, original, p.instructionId(), p.endToEndId(), p.uetr().toString(),
                 status, reason, info == null ? null : info.length() > 105 ? info.substring(0, 105) : info, charges));
     }
 
@@ -408,7 +491,7 @@ public class IncomingProcessor {
             case "INDA" -> bankAccount(AccountType.VOSTRO, p.instructingAgentBic(), p.currency());
             case "INGA" -> bankAccount(AccountType.NOSTRO, p.instructingAgentBic(), p.currency());
             case "COVE" -> bankAccount(AccountType.NOSTRO, p.coverAgentBic(), p.currency());
-            case "CLRG" -> rtgsAccount(p.currency(), p.executionDate());
+            case "CLRG" -> clearingAccount(p);
             default -> Optional.empty();
         };
     }
@@ -425,6 +508,25 @@ public class IncomingProcessor {
                 .filter(a -> a.currency().equals(currency) && a.status() == AccountStatus.ACTIVE
                         && a.counterpartyBic() != null && sameBank(a.counterpartyBic(), bic))
                 .findFirst();
+    }
+
+    /**
+     * Through a clearing system: the account our routing table uses for that kind of system (the instant
+     * position for instant payments, the RTGS account for RTGS and the ACH, whose net positions settle on it).
+     */
+    private Optional<AccountView> clearingAccount(Payment p) {
+        if (p.clearingSystem() != null) {
+            Optional<RoutingMethod> kind = refdata.clearingSystem(p.clearingSystem(), p.executionDate()).map(s -> s.kind());
+            if (kind.isPresent()) {
+                Optional<AccountView> a = refdata.routingRules().stream()
+                        .filter(r -> r.method() == kind.get() && r.currency().equals(p.currency()) && r.validOn(p.executionDate()))
+                        .map(r -> ledger.findAccountByNumber(r.settlementAccount())).flatMap(Optional::stream).findFirst();
+                if (a.isPresent() || kind.get() == RoutingMethod.INSTANT) {
+                    return a;
+                }
+            }
+        }
+        return rtgsAccount(p.currency(), p.executionDate());
     }
 
     /** Our RTGS account in a currency: the one our own routing table uses for RTGS. */

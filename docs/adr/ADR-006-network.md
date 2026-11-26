@@ -4,7 +4,9 @@
 - **Date:** 2026-11-26
 - **Milestone:** M5
 - **Amends:** ADR-003 §1 (state machine), §11 (network outcomes); ADR-005 §5 (receiving)
-- **Amended by:** ADR-007 (M6): every bank screens incoming payments; the tracker reads CdtrAgt from the pacs.008
+- **Amended by:** ADR-007 (M6): every bank screens incoming payments; the tracker reads CdtrAgt from the pacs.008;
+  ADR-008 (M7): the central bank joins the network as a fourth institution (V-shaped clearing systems); a payment
+  that arrived settled through T2 or MiniPay Net is returned (pacs.004 through the system), never rejected
 
 ## Context
 

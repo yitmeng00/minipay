@@ -1,0 +1,5 @@
+package com.minipay.settlement.api;
+
+public enum SettlementError {
+    NOT_OPERATOR, NOT_FOUND, INVALID_MESSAGE, UNSUPPORTED_MESSAGE, ILLEGAL_COMMAND, INVALID_REQUEST, IDEMPOTENCY_CONFLICT
+}

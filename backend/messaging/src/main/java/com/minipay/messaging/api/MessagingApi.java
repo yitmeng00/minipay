@@ -29,6 +29,13 @@ public interface MessagingApi {
     /** Builds, checks and stores a camt.054 credit notification we send. Idempotent per key. */
     MessageView issueCamt054(String businessKey, CreditNotification notification);
 
+    /**
+     * Forwards a stored message under our own AppHdr to {@code toBic}, the Document unchanged byte for byte:
+     * what a V-shaped clearing system does with a payment it settled (ADR-008). Stored as OUTBOUND,
+     * idempotent per key.
+     */
+    MessageView relay(String businessKey, UUID messageId, String toBic);
+
     /** The pacs.008 this transfer would produce, without storing anything (a preview). */
     String renderPacs008(CreditTransfer transfer);
 

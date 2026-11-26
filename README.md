@@ -9,17 +9,18 @@ settlement and reconciliation.
 | Bank A | Kuala Lumpur | `MNPAMYKLXXX` | Originating bank | 8081 | `localhost:5433/bank_a` |
 | Bank B | Frankfurt | `MNPBDEFFXXX` | EUR correspondent | 8082 | `localhost:5434/bank_b` |
 | Bank C | London | `MNPCGB2LXXX` | Beneficiary bank (GBP) | 8083 | `localhost:5435/bank_c` |
+| Central bank | Frankfurt | `MNCBDEFFXXX` | Runs T2, MiniPay Net and MiniPay Instant (M7) | 8084 | `localhost:5436/operator` |
 
 The banks, BICs, IBANs and customers are all fictional. BICs and IBANs have valid formats (IBAN check digits included).
 
-**Status:** M0 (foundation), M1 (ledger) and M2 (payment hub) are done. See the [delivery plan](#milestones).
+**Status:** M0–M7 are done; M8 (reconciliation) is next. See the [delivery plan](#milestones).
 
 ## Repository layout
 
 ```
-docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance)
+docs/adr/              Architecture Decision Records (ADR-001 architecture, 002 ledger, 003 payment hub, 004 reference data, 005 messaging, 006 network, 007 compliance, 008 settlement)
 design/                Claude Design export of the ops console (UI reference only)
-docker-compose.yml     3 × PostgreSQL 16 (one per bank) + Kafka (KRaft)
+docker-compose.yml     4 × PostgreSQL 16 (one per bank, one for the central bank) + Kafka (KRaft)
 backend/               Maven multi-module, Java 21, Spring Boot 3.5
   common/              Money, ISO 4217 minor units, UETR, BIC — no framework code
   ledger/              Double-entry ledger (M1)
@@ -28,8 +29,9 @@ backend/               Maven multi-module, Java 21, Spring Boot 3.5
   messaging/           pacs.008/002/004/009, camt.053/054, MT103 translation, raw message store (M4)
   network-simulator/   The network between the banks: inboxes and the UETR tracker (M5)
   compliance/          Sanctions screening against effective-dated lists, cases, four-eyes release (M6)
-  settlement/ recon/   Placeholders for M7–M8
-  bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c
+  settlement/          The central bank's clearing systems: T2 queue, DNS netting, instant timeouts (M7)
+  recon/               Placeholder for M8
+  bank-app/            Spring Boot app assembling the modules; run with profile bank-a|bank-b|bank-c|operator
 frontend/ops-console/  React + TypeScript + Vite + Tailwind + TanStack Query/Table
 ```
 
@@ -62,7 +64,7 @@ These rules are non-negotiable. The reasoning behind them is in [ADR-001](docs/a
 **Prerequisites:** Java 21, Docker, and Node 20 or later. The Maven wrapper (`./mvnw`) downloads Maven itself.
 
 ```bash
-# 1. Infrastructure: three Postgres databases and Kafka (payment events)
+# 1. Infrastructure: four Postgres databases (three banks, the central bank) and Kafka
 docker compose up -d
 
 # 2. Build and run all tests: unit + Testcontainers integration tests + ArchUnit
@@ -76,6 +78,7 @@ cd backend
 #   (after changing another module, rebuild the jar with `./mvnw -pl bank-app clean package -DskipTests`:
 #    Spring Boot only repackages it when bank-app itself changed, so it can keep stale module jars)
 #   Banks B and C: the same command with bank-b / bank-c, in other terminals.
+#   The central bank (M7, the clearing systems): the same command with profile operator (port 8084).
 
 # 4. Ops console (another terminal)
 cd frontend/ops-console
@@ -91,7 +94,7 @@ module's Flyway migrations.
 
 - **API docs:** http://localhost:8081/swagger-ui.html
 - **Health:** http://localhost:8081/actuator/health
-- **Start from scratch:** `docker compose down -v` deletes all three databases.
+- **Start from scratch:** `docker compose down -v` deletes all four databases.
 
 ### Sample calls (Bank A)
 
@@ -395,6 +398,55 @@ Then release Oakridge at Bank B (`k.weber` releases, `m.vogel` approves) and at 
 to approve. The lists: `GET /api/compliance/lists`, `GET /api/compliance/entries?list=OFAC` (without
 `asOf`, delisted entries are shown too). The audit file: `GET /api/compliance/decisions.csv?from=2026-11-26`.
 
+### Sample calls: settlement systems (Banks B and C, and the central bank)
+
+Start the central bank too (profile `operator`). Banks B and C settle EUR through it. A normal payment
+goes through MiniPay Net and waits for the cycle. An urgent one goes through T2, gross; T2 queues it if
+the payer's account cannot cover it. An instant one goes through MiniPay Instant: it is settled within
+10 seconds, or rejected.
+
+```bash
+B=localhost:8082/api; C=localhost:8083/api; OP=localhost:8084/api/settlement; RUN=$(date +%s)
+# pay BANK KEY DEBTOR AGENT CREDITOR-NAME CREDITOR-ACCOUNT AMOUNT SERVICE-LEVEL
+pay() { curl -s -X POST $1/payments -H 'Content-Type: application/json' -H "Idempotency-Key: m7-$2-$RUN" -d "{
+  \"debtorAccount\": \"$3\", \"creditorAgentBic\": \"$4\", \"creditorName\": \"$5\", \"creditorAccount\": \"$6\",
+  \"amount\": {\"amount\": \"$7\", \"currency\": \"EUR\"}, \"chargeBearer\": \"SHAR\", \"serviceLevel\": \"$8\"}" \
+  | jq -r '"\(.uetr) \(.status) \(.clearingSystem // "-")"'; }
+C_EUR=GB23MNPC40051277330021; RHEIN=DE34500100600533190042; KESSLER=DE13500100600412280017
+
+# 1. T2: urgent payments settle gross at once; the big one does not fit Bank C's account and queues
+pay $C urg1 $C_EUR MNPBDEFFXXX "Rheinwerk Logistik GmbH" $RHEIN 25000.00 HIGH
+pay $C urg2 $C_EUR MNPBDEFFXXX "Rheinwerk Logistik GmbH" $RHEIN 2400000.00 HIGH
+curl -s $OP/rtgs/MNPCGB2LXXX | jq '{available: .available.amount, queued: [.queue[] | {amount: .amount.amount, waiting}]}'
+
+# 2. MiniPay Net: normal payments wait for the cycle (ACSP), then only the net positions move
+pay $B dns1 $KESSLER MNPDBEBBXXX "De Witte Fietsen NV" BE71096123456769 40000.00 NORM
+pay $C dns2 $C_EUR MNPBDEFFXXX "Kessler Maschinenbau GmbH" $KESSLER 12000.00 NORM
+sleep 2   # the payments travel to the central bank over the network (outbox → Kafka)
+curl -s -X POST $OP/dns/cycles/close -H "Idempotency-Key: m7-close-$RUN" \
+  | jq '{id, status, gross: .grossTotal.amount, net: .multilateralTotal.amount, positions: [.positions[] | {bic, net: .net.amount}]}'
+
+# 3. MiniPay Instant: accepted by Bank C and settled in about a second; Bank D (played by the operator) too
+pay $B in1 $RHEIN MNPCGB2LXXX "Pennine Textiles Ltd" $C_EUR 250.00 INST
+pay $B in2 $RHEIN MNPDBEBBXXX "Atelier Vos BV" BE71096123456769 640.00 INST
+sleep 2; curl -s $OP/instant/MNPBDEFFXXX | jq '{today, accepted, timedOut, medianMillis, available: .available.amount}'
+
+# 4. An instant payment to Oakridge Interiors: held for compliance (release it at Bank B with k.weber and
+#    m.vogel); Bank C holds it too, cannot answer in 10 s, and both banks end with RJCT AB05
+pay $B in3 $RHEIN MNPCGB2LXXX "Oakridge Interiors Ltd" GB20MNPC40051290550011 300.00 INST
+```
+
+In the console, open **Settlement** as Bank B or Bank C:
+
+- **RTGS:** the T2 account, the queue (move up, make urgent), the intraday balance.
+- **Deferred net:** the cycle's obligations matrix, net positions and netting efficiency; "Close and
+  settle now".
+- **Instant:** the live feed counting down to the timeout.
+
+Bank A is not a participant: it reaches the euro systems through Bank B. Every bank's mirror
+(`1001-EUR-T2`, `1002-EUR-INST` at Bank B; `1004-EUR-T2`, `1005-EUR-INST` at Bank C) equals the central
+bank's account (`GET $OP/participants`), except for the payments still queued or in an open cycle.
+
 ## What you should learn from M1 (ledger)
 
 **Double entry, and why a customer debit is a decrease.** Every event is recorded twice: once
@@ -605,6 +657,37 @@ more: telling the sender it hit a sanctions list could tip off the listed party.
 **A decision resumes the payment, and the decision is the truth.** The hub hears about the decision
 through an event. If that event is lost, the recovery sweeper finds the released payment anyway.
 
+## What you should learn from M7 (settlement)
+
+**Interbank money moves on someone else's books.** Between correspondents it moves on nostro and vostro
+accounts. In a settlement system it moves on accounts at the central bank, which keeps the only set of
+books that counts. That is why the simulator has a fourth instance. Each bank keeps a mirror of its
+account there, and the mirror must match: M8 checks it.
+
+**Gross, net, instant: three answers to "how much liquidity, and when is it final?"**
+
+- **T2 (RTGS)** settles every payment on its own, at once, final. It needs liquidity for every payment.
+  When there is not enough, the payment waits in a queue: urgent first and strictly in order, normal
+  ones overtaken by smaller ones. Liquidity flows on: one bank's incoming payment releases its own
+  queued payments, which release the next bank's. At the cut-off, whatever still waits is rejected.
+- **MiniPay Net (DNS)** collects payments and settles only each bank's net position, once per cycle. In
+  the end-to-end test, 5,000 of payments need 3,000 of liquidity. The price:
+  - nothing is final until the cycle settles;
+  - a bank that cannot pay its position is unwound, and its counterparties may then be short in turn.
+    That is the systemic risk central banks worry about.
+- **MiniPay Instant** settles in seconds, at any hour, on positions placed in advance (prefunding). The
+  payee must answer within 10 seconds, or the payment is rejected (AB05) and the money released. A
+  sanctions hit cannot be cleared that fast.
+
+**V-shape.** The payer bank addresses its pacs.008 to the system, with the creditor's bank as InstdAgt.
+The system settles first, then forwards the same Document, byte for byte, under its own header. So a
+payment that reaches the creditor's bank is already final. If that bank cannot apply it, it cannot
+reject it: it can only return it (pacs.004) through the system.
+
+**The service level picks the system.** Normal payments go the cheapest way (the ACH), urgent ones
+never wait for a cycle, instant ones go only through the instant scheme. The routing table ranks the
+methods. The service level says which methods a payment may use at all.
+
 ## Milestones
 
 | | Milestone | Status |
@@ -616,5 +699,5 @@ through an event. If that event is lost, the recovery sweeper finds the released
 | M4 | Messaging: pacs.008/002/004, camt.053, MT103 ↔ pacs.008 with loss report, raw store; Messages tab, pacs.008 preview | ✅ |
 | M5 | Network simulator: 3 banks over Kafka, incoming payments, hop-by-hop outcomes, serial and cover, UETR tracker; Payment route and tracker screens | ✅ |
 | M6 | Compliance: sanctions screening at every bank against dated lists, explainable fuzzy matching, cases, four-eyes release, RR04; Sanctions queue screen | ✅ |
-| M7 | Settlement: RTGS, deferred net settlement, instant | |
+| M7 | Settlement: a simulated central bank running T2 (RTGS queue, cut-off), MiniPay Net (cycles, netting, unwinding) and MiniPay Instant (prefunding, 10 s timeout); service levels; Settlement screen | ✅ |
 | M8 | Reconciliation: camt.053 matching, breaks | |

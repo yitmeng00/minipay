@@ -17,6 +17,7 @@ const METHOD: Record<string, string> = {
   SERIAL: 'Serial method · the payment travels through each bank',
   COVER: 'Cover method · the payment goes direct, the money through a correspondent',
   DIRECT: 'Direct · settled on the account between the two banks',
+  CLEARING: 'Through a clearing system · the central bank settles it and forwards the payment',
 }
 
 const SETTLEMENT: Record<string, string> = {

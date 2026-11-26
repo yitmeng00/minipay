@@ -4,8 +4,8 @@ import com.minipay.common.money.Money;
 import java.util.Objects;
 
 /**
- * Something the network told us about a payment we sent. In M5 these come from real pacs.002 /
- * pacs.004 messages via the network simulator; until then the ops console can inject them.
+ * Something the network told us about a payment we sent: read from a received pacs.002 / pacs.004, or,
+ * for a bank the simulator does not run, injected by the ops console playing that bank.
  *
  * @param reasonCode     ISO reason, required for RETURNED (e.g. AC04 ClosedAccountNumber)
  * @param returnedAmount for RETURNED: amount that came back (may be less than sent: banks on the route

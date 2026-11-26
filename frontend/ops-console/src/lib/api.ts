@@ -5,7 +5,6 @@ import type {
   ReconNostro,
   Reconciliation,
   ClearingParticipant,
-  ClearingSystem,
   DnsCycle,
   InstantView,
   RtgsView,
@@ -16,7 +15,6 @@ import type {
   BankInfo,
   BicEntry,
   ChargeBearer,
-  CaseStatus,
   ComplianceCase,
   ComplianceSettings,
   ComplianceStats,
@@ -521,7 +519,6 @@ export function decisionsCsvUrl(bankId: string, from: string, to: string) {
   return `/${bankId}/api/compliance/decisions.csv?from=${from}&to=${to}`
 }
 
-export const OPEN_CASE: CaseStatus[] = ['OPEN', 'ESCALATED', 'PENDING_APPROVAL']
 
 // ---------------------------------------------------------------- settlement systems (M7): the operator's screens
 
@@ -531,10 +528,6 @@ export const OPEN_CASE: CaseStatus[] = ['OPEN', 'ESCALATED', 'PENDING_APPROVAL']
  * a participant, so the operator answers 404 for it.
  */
 const OP = '/operator/api/settlement'
-
-export function useClearingSystems() {
-  return useQuery({ queryKey: ['operator', 'systems'], queryFn: () => getJson<ClearingSystem[]>(`${OP}/systems`), staleTime: 60_000 })
-}
 
 export function useClearingParticipants() {
   return useQuery({

@@ -1,11 +1,11 @@
 # Local infrastructure for MiniPay.
 #
-# One PostgreSQL per bank: in the real world each bank runs its own core systems and
-# never shares a database with another bank. Keeping three databases makes that
-# boundary physical — Bank A cannot "cheat" by reading Bank B's tables.
+# One PostgreSQL per institution: in the real world each bank (and the central bank) runs
+# its own core systems and never shares a database with another. Four databases make that
+# boundary physical: Bank A cannot "cheat" by reading Bank B's tables.
 #
-# Kafka runs in KRaft mode (no ZooKeeper). It is used from M2 onwards
-# (outbox relay, network simulator); in M0/M1 it is idle.
+# Kafka runs in KRaft mode (no ZooKeeper): the outbox relay publishes payment events and
+# carries every message between the institutions (the simulated network).
 
 x-postgres: &postgres
   image: postgres:16-alpine

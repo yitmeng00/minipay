@@ -106,7 +106,7 @@ A score runs from 0 to 100, per party and list entry.
 - **A rule-based hint,** for example "Likely false positive — name overlap only; the country differs".
   The hint says what to check. It never decides.
 
-The design's examples score as an analyst would rank them: "Oakridge Interiors Ltd" ≈ OAKRIDGE
+The demo's examples score as an analyst would rank them: "Oakridge Interiors Ltd" ≈ OAKRIDGE
 INTERIORS TRADING FZE scores 93 (four eyes), and "Halvorsen Shipping AS" ≈ HALVORSEN MARITIME AS
 scores 77.
 
@@ -144,7 +144,7 @@ OPEN ──RELEASE (best score < 90)──────────────�
   Every decision also needs a comment of 20–500 characters. The comment is the audit trail, so "ok"
   is not enough.
 - **Four eyes applies to releases only.** Letting a possible match go is the risky direction, and the
-  design asks for a second approver only there. Rejecting is the conservative outcome, so one person
+  second approver is asked for only there. Rejecting is the conservative outcome, so one person
   may reject.
 - **The database enforces it too.** A trigger refuses an APPROVE by the person who released, so no
   code path can bypass it. Decisions are append-only, a closed case cannot be changed, and a case's

@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * </pre>
  *
  * <p>This type checks <em>format</em> only. Whether a BIC actually exists (and on which date) is a
- * reference-data question answered by the effective-dated BIC directory in M3.
+ * reference-data question answered by the effective-dated BIC directory (ADR-004).
  * An 8-character BIC is normalised to the 11-character head-office form ({@code ...XXX}) so that
  * equality works as banks expect.
  */

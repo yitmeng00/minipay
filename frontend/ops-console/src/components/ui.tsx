@@ -10,7 +10,7 @@ const toneClass: Record<Tone, string> = {
   neutral: 'bg-surface2 text-muted border border-line2',
 }
 
-/** Status pill with a leading dot (design: `.chip`). */
+/** Status pill with a leading dot (`.chip`). */
 export function Chip({ tone = 'neutral', small, children }: { tone?: Tone; small?: boolean; children: ReactNode }) {
   return (
     <span
@@ -54,7 +54,7 @@ export function Button({
   )
 }
 
-/** Segmented control (design: `.seg`). */
+/** Segmented control (`.seg`). */
 export function Segmented<T extends string>({
   label,
   options,
@@ -85,7 +85,7 @@ export function Segmented<T extends string>({
   )
 }
 
-/** Tab strip (design: `.tab` with a count pill). */
+/** Tab strip (`.tab` with a count pill). */
 export function Tabs<T extends string>({
   label,
   tabs,

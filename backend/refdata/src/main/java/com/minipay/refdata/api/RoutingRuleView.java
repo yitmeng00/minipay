@@ -37,8 +37,4 @@ public record RoutingRuleView(
     public int specificity() {
         return destination.equals("*") ? 0 : destination.endsWith("*") ? 1 : 2;
     }
-
-    public boolean isCatchAll() {
-        return destination.equals("*");
-    }
 }

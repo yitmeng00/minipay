@@ -107,4 +107,22 @@ class RouteBuilderTest {
         assertThat(v.hops().get(1).reply()).isEqualTo("RJCT");
         assertThat(v.creditedAmount()).isNull();
     }
+
+    /** An instant payment through the central bank: forwarded unchanged, settled by the system's ACSC. */
+    @Test
+    void a_payment_through_a_clearing_system_is_settled_by_the_systems_confirmation() {
+        String cb = "MNCBDEFFXXX";
+        List<TrackedMessage> m = new ArrayList<>();
+        m.add(msg(0, "pacs.008.001.08", "B-008", B, cb, null, "250.00", "CLRG", null, List.of()));
+        m.add(msg(0, "pacs.008.001.08", "B-008", cb, C, null, "250.00", "CLRG", null, List.of()));
+        m.add(msg(1, "pacs.002.001.10", "C-002", C, cb, "B-008", null, null, "ACCP", List.of()));
+        m.add(msg(1, "pacs.002.001.10", "CB-002", cb, B, "B-008", null, null, "ACSC", List.of()));
+        m.add(msg(1, "pacs.002.001.10", "CB-002b", cb, C, "B-008", null, null, "ACSC", List.of()));
+        TrackerView v = RouteBuilder.build(UETR, m);
+        assertThat(v.method()).isEqualTo("CLEARING");
+        assertThat(v.status()).isEqualTo("ACSC");
+        assertThat(v.creditorAgentBic()).isEqualTo(C);
+        assertThat(v.endToEnd()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(v.creditedAmount()).isNull(); // only the creditor's bank knows what it credited
+    }
 }

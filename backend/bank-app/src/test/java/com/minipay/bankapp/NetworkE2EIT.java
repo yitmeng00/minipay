@@ -123,7 +123,7 @@ class NetworkE2EIT {
 
         // Bank B took EUR 15, Bank C EUR 10: the creditor gets 975.
         assertThat(booked(c, "GB23MNPC40051288779901")).isEqualTo(creditor.plus(eur("975.00")));
-        // Every nostro mirrors the vostro at the other bank: what reconciliation (M8) will check.
+        // Every nostro mirrors the vostro at the other bank: what reconciliation checks (Order 13).
         assertThat(aNostroAtB.minus(booked(a, "1101-EUR-MNPB"))).isEqualTo(eur("1000.00"));
         assertThat(bVostroOfA.minus(booked(b, "DE87500100600778812003"))).isEqualTo(eur("1000.00"));
         assertThat(booked(b, "DE65500100600778812011").minus(bVostroOfC)).isEqualTo(eur("985.00"));
@@ -371,7 +371,7 @@ class NetworkE2EIT {
 
     /** Each bank's mirrors of its accounts at the central bank, and the central bank's own books. */
     record Mirrors(Money bT2, Money cT2, Money bInst, Money cInst, Money opBT2, Money opCT2, Money opBInst, Money opCInst) {
-        /** What reconciliation (M8) will check: every mirror equals the central bank's account, to the cent. */
+        /** What reconciliation checks (Order 13): every mirror equals the central bank's account, to the cent. */
         void match() {
             assertThat(bT2).isEqualTo(opBT2);
             assertThat(cT2).isEqualTo(opCT2);

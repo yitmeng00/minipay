@@ -54,7 +54,7 @@ export const STATUS_TONE: Record<PaymentStatus, Tone> = {
   RETURNED: 'err',
 }
 
-/** The payments list's status tabs (as in the design) and the statuses each one covers. */
+/** The payments list's status tabs and the statuses each one covers. */
 export const STATUS_TABS: { id: string; label: string; statuses: PaymentStatus[] }[] = [
   { id: 'all', label: 'All', statuses: [] },
   { id: 'progress', label: 'In progress', statuses: ['RECEIVED', 'VALIDATED', 'SCREENED', 'SENT', 'ACKED'] },

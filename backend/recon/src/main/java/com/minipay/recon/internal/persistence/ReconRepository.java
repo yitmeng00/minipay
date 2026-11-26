@@ -192,10 +192,6 @@ public class ReconRepository {
                         rs.getBigDecimal("signed_amount"))).list();
     }
 
-    public boolean isMatched(String side, long itemId) {
-        return jdbc.sql("SELECT count(*) FROM recon.match_item WHERE side = :s AND item_id = :i").param("s", side).param("i", itemId)
-                .query(Long.class).single() > 0;
-    }
 
     // ------------------------------------------------------------------ breaks
 

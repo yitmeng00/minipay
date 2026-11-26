@@ -26,8 +26,9 @@ public interface PaymentHubApi {
     DailyOverview overview(LocalDate date);
 
     /**
-     * SIMULATION (until M5): plays the next bank and sends us its pacs.002 / pacs.004, which is then
-     * received like any real message. Idempotent per key.
+     * SIMULATION for a bank outside the simulator (Paris, Brussels …): plays that bank and sends us its
+     * pacs.002 / pacs.004, which is then received like any real message. The simulated banks and the
+     * central bank answer over the network themselves. Idempotent per key.
      */
     Replayable<PaymentView> onNetworkEvent(String idempotencyKey, String uetr, NetworkEvent event);
 

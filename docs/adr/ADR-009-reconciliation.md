@@ -157,7 +157,7 @@ milestones' demos, before the first statement. The proof reports it as the openi
 
 ### 7. The screen
 
-The console's **Reconciliation** screen follows `design/Reconciliation.dc.html`, per nostro and
+The console's **Reconciliation** screen shows, per nostro and
 statement date:
 
 - the statement and the matching rules;
